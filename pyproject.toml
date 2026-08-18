@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-rag"
+version = "0.1.0"
+description = "Incremental Agentic RAG API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.116,<1",
+    "pydantic-settings>=2.10,<3",
+    "uvicorn[standard]>=0.35,<1",
+]
+
+[project.optional-dependencies]
+knowledge = [
+    "chromadb>=1.5,<2",
+    "sentence-transformers>=5.7,<6",
+]
+dev = [
+    "chromadb>=1.5,<2",
+    "httpx>=0.28,<1",
+    "pytest>=8.4,<9",
+]
+
+[project.scripts]
+agentic-rag-ingest = "app.knowledge.ingestion.cli:main"
+agentic-rag-retrieve = "app.knowledge.retrieval.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

@@ -1,0 +1,13 @@
+.git
+.gitignore
+.venv
+.env
+.pytest_cache
+*.egg-info
+**/__pycache__
+**/*.py[cod]
+chroma
+documents
+tests
+docs
+*.pdf

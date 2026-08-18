@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Agentic RAG runtime data
+chroma/
+documents/*
+!documents/.gitkeep

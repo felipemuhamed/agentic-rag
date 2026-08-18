@@ -1,0 +1,136 @@
+name: agentic-rag
+
+x-api-environment: &api-environment
+  APP_NAME: ${APP_NAME:-Agentic RAG}
+  APP_VERSION: ${APP_VERSION:-0.1.0}
+  APP_ENVIRONMENT: ${APP_ENVIRONMENT:-development}
+
+x-knowledge-environment: &knowledge-environment
+  <<: *api-environment
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-BAAI/bge-m3}
+  EMBEDDING_DEVICE: ${EMBEDDING_DEVICE:-cpu}
+  RERANKER_MODEL: ${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
+  RERANKER_DEVICE: ${RERANKER_DEVICE:-cpu}
+  CHROMA_MODE: http
+  CHROMA_HOST: chroma
+  CHROMA_PORT: 8000
+  CHROMA_SSL: "false"
+  CHROMA_TENANT: ${CHROMA_TENANT:-default_tenant}
+  CHROMA_DATABASE: ${CHROMA_DATABASE:-default_database}
+  CHROMA_COLLECTION: ${CHROMA_COLLECTION:-knowledge}
+  INGESTION_CHUNK_SIZE: ${INGESTION_CHUNK_SIZE:-700}
+  INGESTION_CHUNK_OVERLAP: ${INGESTION_CHUNK_OVERLAP:-100}
+  RAG_FETCH_K: ${RAG_FETCH_K:-60}
+  RAG_CANDIDATE_K: ${RAG_CANDIDATE_K:-20}
+  RAG_FINAL_K: ${RAG_FINAL_K:-5}
+  RAG_LAMBDA_MULT: ${RAG_LAMBDA_MULT:-0.65}
+  HF_HOME: /home/app/.cache/huggingface
+
+services:
+  chroma:
+    image: ${CHROMA_IMAGE:-chromadb/chroma:1.5.9}
+    ports:
+      - "${CHROMA_BIND:-127.0.0.1}:${CHROMA_PORT:-8001}:8000"
+    volumes:
+      - chroma-data:/data
+
+  chroma-ready:
+    image: python:${PYTHON_VERSION:-3.11}-slim
+    depends_on:
+      chroma:
+        condition: service_started
+    command:
+      - python
+      - -c
+      - |
+        import time
+        import urllib.request
+
+        for attempt in range(30):
+            try:
+                urllib.request.urlopen(
+                    "http://chroma:8000/api/v2/healthcheck",
+                    timeout=2,
+                )
+                raise SystemExit(0)
+            except Exception:
+                if attempt == 29:
+                    raise
+                time.sleep(2)
+    restart: "no"
+
+  api:
+    image: agentic-rag-api:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+    environment:
+      <<: *api-environment
+      CHROMA_MODE: http
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      CHROMA_SSL: "false"
+      CHROMA_TENANT: ${CHROMA_TENANT:-default_tenant}
+      CHROMA_DATABASE: ${CHROMA_DATABASE:-default_database}
+      CHROMA_COLLECTION: ${CHROMA_COLLECTION:-knowledge}
+    ports:
+      - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    init: true
+    depends_on:
+      chroma-ready:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  ingest:
+    profiles: [tools]
+    image: agentic-rag-knowledge:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: knowledge
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+    environment: *knowledge-environment
+    volumes:
+      - model-cache:/home/app/.cache/huggingface
+      - ./documents:/documents:ro
+    init: true
+    depends_on:
+      chroma-ready:
+        condition: service_completed_successfully
+
+  retrieve:
+    profiles: [tools]
+    image: agentic-rag-knowledge:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: knowledge
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+    entrypoint: [agentic-rag-retrieve]
+    environment: *knowledge-environment
+    volumes:
+      - model-cache:/home/app/.cache/huggingface
+    init: true
+    depends_on:
+      chroma-ready:
+        condition: service_completed_successfully
+
+volumes:
+  chroma-data:
+  model-cache:
