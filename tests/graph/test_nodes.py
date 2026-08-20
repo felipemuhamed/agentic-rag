@@ -1,0 +1,241 @@
+from app.graph.nodes import RagNodes
+from app.knowledge.retrieval.models import (
+    RetrievalDiagnostics,
+    RetrievalResult,
+    RetrievedDocument,
+)
+from app.llm.answer_generator import NO_CONTEXT_ANSWER
+from app.llm.rag_grader import RagGrade
+
+
+def make_document() -> RetrievedDocument:
+    return RetrievedDocument(
+        chunk_id="chunk-1",
+        content="Conteúdo recuperado.",
+        metadata={"source": "guia.md"},
+        retrieval_score=0.7,
+        rerank_score=0.9,
+    )
+
+
+class StubRetriever:
+    def __init__(self, documents: list[RetrievedDocument]):
+        self.queries: list[str] = []
+        self.result = RetrievalResult(
+            documents=documents,
+            diagnostics=RetrievalDiagnostics(
+                fetched_count=len(documents),
+                mmr_selected_count=len(documents),
+                reranked_count=len(documents),
+                returned_count=len(documents),
+            ),
+        )
+
+    def retrieve(self, query: str) -> RetrievalResult:
+        self.queries.append(query)
+        return self.result
+
+
+class StubAnswerGenerator:
+    def __init__(self):
+        self.calls: list[tuple[str, list[RetrievedDocument]]] = []
+
+    def generate(
+        self,
+        question: str,
+        documents: list[RetrievedDocument],
+    ) -> str:
+        self.calls.append((question, documents))
+        return "Resposta grounded."
+
+
+class StubGrader:
+    def __init__(self, relevant: bool = True):
+        self.calls: list[tuple[str, list[RetrievedDocument]]] = []
+        self.relevant = relevant
+
+    def grade(
+        self,
+        question: str,
+        documents: list[RetrievedDocument],
+    ) -> RagGrade:
+        self.calls.append((question, documents))
+        return RagGrade(
+            relevant=self.relevant,
+            confidence=0.9,
+            reason=(
+                "Contexto suficiente."
+                if self.relevant
+                else "Contexto insuficiente."
+            ),
+        )
+
+
+class StubQueryRewriter:
+    def __init__(self, rewritten_query: str = "consulta reescrita"):
+        self.rewritten_query = rewritten_query
+        self.calls: list[tuple[str, str, str]] = []
+
+    def rewrite(
+        self,
+        question: str,
+        search_query: str,
+        failure_reason: str,
+    ) -> str:
+        self.calls.append((question, search_query, failure_reason))
+        return self.rewritten_query
+
+
+class StubQueryPreparer:
+    def __init__(self, prepared_query: str | None = None):
+        self.prepared_query = prepared_query
+        self.calls: list[tuple[str, list[object]]] = []
+
+    def prepare(self, question: str, history: list[object]) -> str:
+        self.calls.append((question, history))
+        return self.prepared_query or question
+
+
+def test_nodes_are_independently_callable() -> None:
+    document = make_document()
+    retriever = StubRetriever([document])
+    grader = StubGrader()
+    preparer = StubQueryPreparer()
+    rewriter = StubQueryRewriter()
+    generator = StubAnswerGenerator()
+    nodes = RagNodes(
+        retriever=retriever,
+        grader=grader,
+        query_preparer=preparer,
+        query_rewriter=rewriter,
+        answer_generator=generator,
+        max_rag_attempts=2,
+    )
+
+    prepared = nodes.prepare_query({"question": "  Como funciona?  "})
+    retrieved = nodes.retrieve_rag(
+        {
+            "question": prepared["question"],
+            "prepared_query": prepared["prepared_query"],
+            "search_query": prepared["search_query"],
+            "retrieval_attempts": prepared["retrieval_attempts"],
+        }
+    )
+    graded = nodes.grade_rag(
+        {
+            "question": prepared["question"],
+            "prepared_query": prepared["prepared_query"],
+            "documents": retrieved["documents"],
+        }
+    )
+    answered = nodes.generate_answer(
+        {
+            "question": prepared["question"],
+            "prepared_query": prepared["prepared_query"],
+            "documents": retrieved["documents"],
+        }
+    )
+
+    assert prepared == {
+        "question": "Como funciona?",
+        "prepared_query": "Como funciona?",
+        "search_query": "Como funciona?",
+        "retrieval_attempts": 0,
+    }
+    assert preparer.calls == [("Como funciona?", [])]
+    assert retriever.queries == ["Como funciona?"]
+    assert retrieved["documents"] == [document]
+    assert retrieved["retrieval_attempts"] == 1
+    assert grader.calls == [("Como funciona?", [document])]
+    assert graded == {
+        "rag_relevant": True,
+        "rag_confidence": 0.9,
+        "rag_reason": "Contexto suficiente.",
+    }
+    assert nodes.route_after_grade(
+        {**graded, "retrieval_attempts": 1}
+    ) == "answer"
+    assert generator.calls == [("Como funciona?", [document])]
+    assert answered["answer"] == "Resposta grounded."
+    assert answered["source"] == "rag"
+    assert [message.content for message in answered["messages"]] == [
+        "Como funciona?",
+        "Resposta grounded.",
+    ]
+
+
+def test_prepare_query_rejects_blank_question() -> None:
+    nodes = RagNodes(
+        retriever=StubRetriever([]),
+        grader=StubGrader(),
+        query_preparer=StubQueryPreparer(),
+        query_rewriter=StubQueryRewriter(),
+        answer_generator=StubAnswerGenerator(),
+        max_rag_attempts=2,
+    )
+
+    try:
+        nodes.prepare_query({"question": "   "})
+    except ValueError as error:
+        assert str(error) == "question must not be empty"
+    else:
+        raise AssertionError("blank question should fail")
+
+
+def test_irrelevant_grade_routes_to_no_answer() -> None:
+    rewriter = StubQueryRewriter()
+    nodes = RagNodes(
+        retriever=StubRetriever([make_document()]),
+        grader=StubGrader(relevant=False),
+        query_preparer=StubQueryPreparer(),
+        query_rewriter=rewriter,
+        answer_generator=StubAnswerGenerator(),
+        max_rag_attempts=2,
+    )
+
+    retry_state = {
+        "question": "Pergunta original",
+        "prepared_query": "Pergunta original autocontida",
+        "search_query": "consulta original",
+        "retrieval_attempts": 1,
+        "rag_relevant": False,
+        "rag_reason": "Faltam termos específicos.",
+    }
+    route = nodes.route_after_grade(retry_state)
+    rewritten = nodes.rewrite_query(retry_state)
+    terminal_state = {**retry_state, "retrieval_attempts": 2}
+    terminal_route = nodes.route_after_grade(terminal_state)
+    result = nodes.no_answer(terminal_state)
+
+    assert route == "rewrite"
+    assert rewritten == {"search_query": "consulta reescrita"}
+    assert rewriter.calls == [
+        (
+            "Pergunta original autocontida",
+            "consulta original",
+            "Faltam termos específicos.",
+        )
+    ]
+    assert terminal_route == "no_answer"
+    assert result["answer"] == NO_CONTEXT_ANSWER
+    assert result["source"] == "none"
+    assert [message.content for message in result["messages"]] == [
+        "Pergunta original",
+        NO_CONTEXT_ANSWER,
+    ]
+
+
+def test_max_rag_attempts_must_be_positive() -> None:
+    try:
+        RagNodes(
+            retriever=StubRetriever([]),
+            grader=StubGrader(),
+            query_preparer=StubQueryPreparer(),
+            query_rewriter=StubQueryRewriter(),
+            answer_generator=StubAnswerGenerator(),
+            max_rag_attempts=0,
+        )
+    except ValueError as error:
+        assert str(error) == "max_rag_attempts must be at least 1"
+    else:
+        raise AssertionError("zero attempts should fail")

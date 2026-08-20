@@ -1,23 +1,14 @@
-from functools import lru_cache
-
-from langchain.chat_models import init_chat_model
-
-from app.settings import settings
+from typing import Any
 
 
-@lru_cache(maxsize=1)
-def get_internal_model():
+def create_chat_model(model_name: str) -> Any:
+    normalized_name = model_name.strip()
+    if not normalized_name:
+        raise ValueError(
+            "LLM_MODEL must be configured as 'provider:model', "
+            "for example 'openai:gpt-4.1-mini'"
+        )
 
-    return init_chat_model(
-        settings.llm_model,
-    ).with_config({
-        "tags": ["nostream"],
-    })
+    from langchain.chat_models import init_chat_model
 
-
-@lru_cache(maxsize=1)
-def get_answer_model():
-
-    return init_chat_model(
-        settings.llm_model,
-    )
+    return init_chat_model(normalized_name)

@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,7 +41,7 @@ class Settings(BaseSettings):
 
     rag_lambda_mult: float = 0.65
 
-    max_rag_attempts: int = 2
+    max_rag_attempts: int = Field(default=2, ge=1)
 
 
 settings = Settings()

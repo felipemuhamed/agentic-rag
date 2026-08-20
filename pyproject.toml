@@ -18,15 +18,22 @@ knowledge = [
     "chromadb>=1.5,<2",
     "sentence-transformers>=5.7,<6",
 ]
+rag = [
+    "langchain>=1.3,<2",
+    "langgraph>=1.2,<2",
+]
 dev = [
     "chromadb>=1.5,<2",
     "httpx>=0.28,<1",
+    "langchain>=1.3,<2",
+    "langgraph>=1.2,<2",
     "pytest>=8.4,<9",
 ]
 
 [project.scripts]
 agentic-rag-ingest = "app.knowledge.ingestion.cli:main"
 agentic-rag-retrieve = "app.knowledge.retrieval.cli:main"
+agentic-rag-ask = "app.graph.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]

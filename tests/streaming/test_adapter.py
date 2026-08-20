@@ -1,0 +1,282 @@
+from dataclasses import dataclass
+
+from app.graph.builder import build_rag_graph
+from app.knowledge.retrieval.models import (
+    RetrievalDiagnostics,
+    RetrievalResult,
+    RetrievedDocument,
+)
+from app.llm.rag_grader import RagGrade
+from app.streaming.adapter import (
+    GENERATING_MESSAGE,
+    PUBLIC_ERROR_MESSAGE,
+    LangGraphStreamAdapter,
+)
+
+
+@dataclass
+class FakeMessage:
+    content: object
+
+
+class FakeGraph:
+    def __init__(self, events: list[object]):
+        self.events = events
+        self.inputs: list[
+            tuple[dict[str, str], dict[str, dict[str, str]], list[str]]
+        ] = []
+
+    def stream(
+        self,
+        input: dict[str, str],
+        *,
+        config: dict[str, dict[str, str]],
+        stream_mode: list[str],
+    ):
+        self.inputs.append((input, config, stream_mode))
+        for event in self.events:
+            if isinstance(event, Exception):
+                raise event
+            yield event
+
+
+def event_names(events) -> list[str]:
+    return [event.event for event in events]
+
+
+def test_adapter_streams_only_final_generation_tokens() -> None:
+    graph = FakeGraph(
+        [
+            (
+                "messages",
+                (
+                    FakeMessage("SEGREDO DO GRADER"),
+                    {"langgraph_node": "grade_rag"},
+                ),
+            ),
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
+            (
+                "messages",
+                (
+                    FakeMessage("SEGREDO DO REWRITE"),
+                    {"langgraph_node": "rewrite_query"},
+                ),
+            ),
+            ("updates", {"grade_rag": {"rag_relevant": True}}),
+            (
+                "messages",
+                (FakeMessage("Resposta "), {"langgraph_node": "generate_answer"}),
+            ),
+            (
+                "messages",
+                (FakeMessage("final."), {"langgraph_node": "generate_answer"}),
+            ),
+            (
+                "updates",
+                {
+                    "generate_answer": {
+                        "answer": "Resposta final.",
+                        "source": "rag",
+                    }
+                },
+            ),
+        ]
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=2,
+    )
+
+    events = list(
+        adapter.stream(
+            conversation_id="conversation-1",
+            message="Pergunta",
+        )
+    )
+
+    assert event_names(events) == [
+        "status",
+        "status",
+        "sources",
+        "token",
+        "token",
+        "done",
+    ]
+    assert events[0].data["stage"] == "rag_search"
+    assert events[1].data == {
+        "stage": "generating",
+        "message": GENERATING_MESSAGE,
+    }
+    assert events[2].data == {"sources": []}
+    assert [event.data["text"] for event in events if event.event == "token"] == [
+        "Resposta ",
+        "final.",
+    ]
+    assert "SEGREDO" not in "".join(event.to_sse() for event in events)
+    assert events[-1].data == {}
+    assert graph.inputs == [
+        (
+            {"question": "Pergunta"},
+            {"configurable": {"thread_id": "conversation-1"}},
+            ["updates", "messages"],
+        )
+    ]
+
+
+def test_adapter_exposes_rewrite_status_without_rewrite_tokens() -> None:
+    graph = FakeGraph(
+        [
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
+            ("updates", {"grade_rag": {"rag_relevant": False}}),
+            (
+                "messages",
+                (
+                    FakeMessage("consulta interna"),
+                    {"langgraph_node": "rewrite_query"},
+                ),
+            ),
+            ("updates", {"rewrite_query": {"search_query": "nova consulta"}}),
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 2}}),
+            ("updates", {"grade_rag": {"rag_relevant": True}}),
+            (
+                "updates",
+                {
+                    "generate_answer": {
+                        "answer": "Resposta após rewrite.",
+                        "source": "rag",
+                    }
+                },
+            ),
+        ]
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=2,
+    )
+
+    events = list(adapter.stream(conversation_id="c-1", message="Pergunta"))
+
+    statuses = [event.data["stage"] for event in events if event.event == "status"]
+    assert statuses == [
+        "rag_search",
+        "query_rewrite",
+        "rag_search",
+        "generating",
+    ]
+    assert [event.data["text"] for event in events if event.event == "token"] == [
+        "Resposta após rewrite."
+    ]
+    assert events[-1].event == "done"
+
+
+def test_no_answer_is_sent_as_final_token_before_done() -> None:
+    graph = FakeGraph(
+        [
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
+            ("updates", {"grade_rag": {"rag_relevant": False}}),
+            (
+                "updates",
+                {
+                    "no_answer": {
+                        "answer": "Informação insuficiente.",
+                        "source": "none",
+                    }
+                },
+            ),
+        ]
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=1,
+    )
+
+    events = list(adapter.stream(conversation_id="c-1", message="Pergunta"))
+
+    assert event_names(events) == [
+        "status",
+        "status",
+        "sources",
+        "token",
+        "done",
+    ]
+    assert events[-2].data == {"text": "Informação insuficiente."}
+
+
+def test_stream_failure_ends_with_safe_error_event() -> None:
+    graph = FakeGraph(
+        [
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
+            RuntimeError("provider secret must not leak"),
+        ]
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=2,
+    )
+
+    events = list(adapter.stream(conversation_id="c-1", message="Pergunta"))
+
+    assert events[-1].event == "error"
+    assert events[-1].data == {
+        "code": "stream_failed",
+        "message": PUBLIC_ERROR_MESSAGE,
+    }
+    assert all(event.event != "done" for event in events)
+    assert "secret" not in events[-1].to_sse()
+
+
+class StaticRetriever:
+    def retrieve(self, query: str) -> RetrievalResult:
+        document = RetrievedDocument(
+            chunk_id="chunk-1",
+            content="Contexto suficiente.",
+            metadata={"source": "guia.md"},
+            retrieval_score=0.8,
+            rerank_score=0.9,
+        )
+        return RetrievalResult(
+            documents=[document],
+            diagnostics=RetrievalDiagnostics(1, 1, 1, 1),
+        )
+
+
+class RelevantGrader:
+    def grade(self, question: str, documents: list[RetrievedDocument]) -> RagGrade:
+        return RagGrade(relevant=True, confidence=1.0, reason="Suficiente.")
+
+
+class IdentityQueryPreparer:
+    def prepare(self, question: str, history: list[object]) -> str:
+        return question
+
+
+class RewriterThatMustNotRun:
+    def rewrite(self, question: str, search_query: str, failure_reason: str) -> str:
+        raise AssertionError("rewriter must not run")
+
+
+class StaticAnswerGenerator:
+    def generate(self, question: str, documents: list[RetrievedDocument]) -> str:
+        return "Resposta do grafo compilado."
+
+
+def test_adapter_accepts_current_compiled_langgraph_stream_shape() -> None:
+    graph = build_rag_graph(
+        retriever=StaticRetriever(),
+        grader=RelevantGrader(),
+        query_preparer=IdentityQueryPreparer(),
+        query_rewriter=RewriterThatMustNotRun(),
+        answer_generator=StaticAnswerGenerator(),
+        max_rag_attempts=2,
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=2,
+    )
+
+    events = list(adapter.stream(conversation_id="c-1", message="Pergunta"))
+
+    assert [event.data["text"] for event in events if event.event == "token"] == [
+        "Resposta do grafo compilado."
+    ]
+    assert events[-1].event == "done"

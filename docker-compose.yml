@@ -26,6 +26,11 @@ x-knowledge-environment: &knowledge-environment
   RAG_LAMBDA_MULT: ${RAG_LAMBDA_MULT:-0.65}
   HF_HOME: /home/app/.cache/huggingface
 
+x-rag-environment: &rag-environment
+  <<: *knowledge-environment
+  LLM_MODEL: ${LLM_MODEL:-}
+  MAX_RAG_ATTEMPTS: ${MAX_RAG_ATTEMPTS:-2}
+
 services:
   chroma:
     image: ${CHROMA_IMAGE:-chromadb/chroma:1.5.9}
@@ -67,17 +72,14 @@ services:
       target: api
       args:
         PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
-    environment:
-      <<: *api-environment
-      CHROMA_MODE: http
-      CHROMA_HOST: chroma
-      CHROMA_PORT: 8000
-      CHROMA_SSL: "false"
-      CHROMA_TENANT: ${CHROMA_TENANT:-default_tenant}
-      CHROMA_DATABASE: ${CHROMA_DATABASE:-default_database}
-      CHROMA_COLLECTION: ${CHROMA_COLLECTION:-knowledge}
+        LLM_PROVIDER_PACKAGE: ${LLM_PROVIDER_PACKAGE:-langchain-openai==1.5.1}
+    env_file:
+      - .env
+    environment: *rag-environment
     ports:
       - "${APP_BIND:-127.0.0.1}:${APP_PORT:-8000}:8000"
+    volumes:
+      - model-cache:/home/app/.cache/huggingface
     init: true
     depends_on:
       chroma-ready:
@@ -124,6 +126,26 @@ services:
         PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
     entrypoint: [agentic-rag-retrieve]
     environment: *knowledge-environment
+    volumes:
+      - model-cache:/home/app/.cache/huggingface
+    init: true
+    depends_on:
+      chroma-ready:
+        condition: service_completed_successfully
+
+  rag:
+    profiles: [tools]
+    image: agentic-rag-rag:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: rag
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+        LLM_PROVIDER_PACKAGE: ${LLM_PROVIDER_PACKAGE:-langchain-openai==1.5.1}
+    env_file:
+      - .env
+    environment: *rag-environment
     volumes:
       - model-cache:/home/app/.cache/huggingface
     init: true

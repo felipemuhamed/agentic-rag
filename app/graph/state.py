@@ -1,24 +1,33 @@
-from typing import Literal
+from typing import Annotated, Literal, NotRequired, TypedDict
 
-from langchain_core.documents import Document
-from langgraph.graph import MessagesState
+from langchain_core.messages import AnyMessage
+from langgraph.graph.message import add_messages
+
+from app.knowledge.retrieval.models import (
+    RetrievalDiagnostics,
+    RetrievedDocument,
+)
 
 
-class RagState(MessagesState):
-
+class RagInput(TypedDict):
     question: str
 
-    search_query: str
 
-    documents: list[Document]
+class RagOutput(TypedDict):
+    answer: str
+    source: Literal["rag", "none"]
 
-    retrieval_attempts: int
 
-    rag_relevant: bool
-    rag_confidence: float
-
-    source: Literal[
-        "rag",
-        "web",
-        "none",
-    ]
+class RagState(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+    question: str
+    prepared_query: NotRequired[str]
+    search_query: NotRequired[str]
+    retrieval_attempts: NotRequired[int]
+    documents: NotRequired[list[RetrievedDocument]]
+    retrieval_diagnostics: NotRequired[RetrievalDiagnostics]
+    rag_relevant: NotRequired[bool]
+    rag_confidence: NotRequired[float]
+    rag_reason: NotRequired[str]
+    answer: NotRequired[str]
+    source: NotRequired[Literal["rag", "none"]]

@@ -15,12 +15,21 @@ COPY app ./app
 
 FROM build-base AS api-builder
 
-RUN python -m pip wheel --wheel-dir /wheels .
+ARG LLM_PROVIDER_PACKAGE=langchain-openai==1.5.1
+
+RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag]' "${LLM_PROVIDER_PACKAGE}"
 
 
 FROM build-base AS knowledge-builder
 
 RUN python -m pip wheel --wheel-dir /wheels '.[knowledge]'
+
+
+FROM build-base AS rag-builder
+
+ARG LLM_PROVIDER_PACKAGE=langchain-openai==1.5.1
+
+RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag]' "${LLM_PROVIDER_PACKAGE}"
 
 
 FROM python:${PYTHON_VERSION}-slim AS runtime-base
@@ -40,8 +49,11 @@ WORKDIR /app
 
 FROM runtime-base AS api
 
+ARG LLM_PROVIDER_PACKAGE=langchain-openai==1.5.1
+
 RUN --mount=type=bind,from=api-builder,source=/wheels,target=/wheels \
-    python -m pip install --no-index --find-links=/wheels agentic-rag
+    python -m pip install --no-index --find-links=/wheels \
+    'agentic-rag[knowledge,rag]' "${LLM_PROVIDER_PACKAGE}"
 
 USER app
 
@@ -61,3 +73,16 @@ RUN --mount=type=bind,from=knowledge-builder,source=/wheels,target=/wheels \
 USER app
 
 ENTRYPOINT ["agentic-rag-ingest"]
+
+
+FROM runtime-base AS rag
+
+ARG LLM_PROVIDER_PACKAGE=langchain-openai==1.5.1
+
+RUN --mount=type=bind,from=rag-builder,source=/wheels,target=/wheels \
+    python -m pip install --no-index --find-links=/wheels \
+    'agentic-rag[knowledge,rag]' "${LLM_PROVIDER_PACKAGE}"
+
+USER app
+
+ENTRYPOINT ["agentic-rag-ask"]
