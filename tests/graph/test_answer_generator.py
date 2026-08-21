@@ -6,6 +6,7 @@ from app.llm.answer_generator import (
     LangChainAnswerGenerator,
     NO_CONTEXT_ANSWER,
 )
+from app.websearch.models import WebSearchResult
 
 
 @dataclass
@@ -65,3 +66,22 @@ def test_text_content_blocks_are_supported() -> None:
     generator = LangChainAnswerGenerator(model)
 
     assert generator.generate("Pergunta", [make_document()]) == "Resposta em bloco."
+
+
+def test_web_result_url_is_preserved_in_grounding_context() -> None:
+    model = RecordingChatModel()
+    generator = LangChainAnswerGenerator(model)
+    result = WebSearchResult(
+        title="Keycloak documentation",
+        url="https://www.keycloak.org/docs/oauth",
+        content="Keycloak supports OAuth 2.0.",
+        score=0.9,
+        provider="tavily",
+    )
+
+    generator.generate("Como configurar OAuth?", [result])
+
+    messages = model.inputs[0]
+    assert isinstance(messages, list)
+    assert '"url": "https://www.keycloak.org/docs/oauth"' in messages[1][1]
+    assert '"provider": "tavily"' in messages[1][1]

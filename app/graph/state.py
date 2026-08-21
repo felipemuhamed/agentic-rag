@@ -7,6 +7,7 @@ from app.knowledge.retrieval.models import (
     RetrievalDiagnostics,
     RetrievedDocument,
 )
+from app.websearch.models import WebSearchResult
 
 
 class RagInput(TypedDict):
@@ -15,7 +16,7 @@ class RagInput(TypedDict):
 
 class RagOutput(TypedDict):
     answer: str
-    source: Literal["rag", "none"]
+    source: Literal["rag", "web", "none"]
 
 
 class RagState(TypedDict):
@@ -29,5 +30,9 @@ class RagState(TypedDict):
     rag_relevant: NotRequired[bool]
     rag_confidence: NotRequired[float]
     rag_reason: NotRequired[str]
+    web_results: NotRequired[list[WebSearchResult]]
+    web_relevant: NotRequired[bool]
+    web_confidence: NotRequired[float]
+    web_reason: NotRequired[str]
     answer: NotRequired[str]
-    source: NotRequired[Literal["rag", "none"]]
+    source: NotRequired[Literal["rag", "web", "none"]]

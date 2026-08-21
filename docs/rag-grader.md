@@ -40,12 +40,13 @@ interno para diagnostico; a saida publica permanece `answer` e `source`.
 ```text
 grade.relevant = true                         -> generate_answer
 grade.relevant = false e ainda ha tentativas -> rewrite_query
-grade.relevant = false no limite             -> no_answer
+grade.relevant = false no limite             -> search_web
 ```
 
 Sem documentos, o adapter produz uma decisao negativa deterministica com
 confidence `1.0`, sem invocar o modelo do grader. O roteamento da Etapa 6 ainda
-pode tentar uma consulta reescrita antes de chegar a `no_answer`.
+pode tentar uma consulta reescrita; desde a Etapa 9, o esgotamento segue para o
+fallback web em vez de responder sem evidencia externa.
 
 ## Limites
 

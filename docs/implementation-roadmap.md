@@ -16,7 +16,7 @@ seguinte nao deve ser implementada antes disso.
 | 6 | Rewrite e retry limitado | Numero maximo de tentativas comprovado e ausencia de loop infinito | Implementada; testes comprovam sucesso apos rewrite e termino exato no limite |
 | 7 | SSE em `POST /chat/stream` com adapter publico | Status precede tokens; somente resposta final e transmitida; termina em `done` ou `error` | Implementada; contrato HTTP e filtragem de eventos cobertos por testes |
 | 8 | Threads e memoria por `conversationId` | Follow-up vira consulta independente e conversas ficam isoladas | Implementada; criterios cobertos por testes com checkpointer real |
-| 9 | Fallback web por interface substituivel | Web so executa apos falha interna; evidencia insuficiente resulta em `no_answer` | Pendente |
+| 9 | Fallback web por interface substituivel | Web so executa apos falha interna; evidencia insuficiente resulta em `no_answer` | Implementada; ambos os gates e metadata de URL cobertos por testes |
 | 10 | Citacoes e proveniencia normalizadas | Toda citacao resolve para uma fonte real com metadata preservada | Pendente |
 | 11 | Dataset e avaliacao reproduzivel | Baseline versionado com Recall@K e MRR ou nDCG, alem de grounding | Pendente |
 | 12 | Hardening de producao | Persistencia duravel, resiliencia, seguranca, observabilidade e deploy validados | Pendente |
@@ -88,8 +88,20 @@ mesmo thread e que outro ID inicia sem contexto.
 Esse checkpointer existe somente no processo da API: reinicio e replicas nao
 compartilham memoria. Persistencia duravel continua reservada ao hardening.
 
-## Proxima iteracao proposta: Etapa 9
+## Etapa 9 implementada
 
-Adicionar fallback web atras de uma interface substituivel e acionado somente
-depois do esgotamento do RAG interno. A evidencia web tambem devera passar por
-um gate antes de chegar ao gerador; citacoes permanecem para a Etapa 10.
+Foi criado `WebSearchProvider`, com adapter Tavily configuravel e sem referencia
+ao provider dentro dos nodes. Um grade RAG negativo no limite segue para
+`search_web -> grade_web`; apenas `web_relevant=true` libera o gerador com
+`source=web`. Resultado vazio ou insuficiente termina em `no_answer`. Os
+resultados preservam titulo, URL, score e provider, mas ainda nao existe o
+contrato publico de citacoes da etapa seguinte.
+
+Testes comprovam que o provider nao e chamado quando o RAG e suficiente, que a
+ultima consulta interna alimenta o fallback, que URLs permanecem na metadata e
+que evidencia web reprovada nunca chega ao gerador.
+
+## Proxima iteracao proposta: Etapa 10
+
+Normalizar fontes RAG e web, atribuir IDs de citacao verificaveis e preencher o
+evento SSE `sources` sem expor modelos internos do grafo.

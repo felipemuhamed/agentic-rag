@@ -6,6 +6,8 @@ from app.knowledge.retrieval.models import (
 )
 from app.llm.answer_generator import LangChainAnswerGenerator, NO_CONTEXT_ANSWER
 from app.llm.rag_grader import RagGrade
+from app.llm.web_grader import WebGrade
+from app.websearch.models import WebSearchResult
 
 
 class IdentityQueryPreparer:
@@ -34,9 +36,14 @@ class RecordingAnswerGenerator:
     def generate(
         self,
         question: str,
-        documents: list[RetrievedDocument],
+        documents: list[object],
     ) -> str:
-        self.events.append(f"answer:{question}:{documents[0].chunk_id}")
+        identifier = getattr(
+            documents[0],
+            "chunk_id",
+            getattr(documents[0], "url", "unknown"),
+        )
+        self.events.append(f"answer:{question}:{identifier}")
         return "Use o refresh token descrito no guia."
 
 
@@ -69,6 +76,49 @@ class RewriterThatMustNotRun:
         raise AssertionError("query rewriter must not run")
 
 
+class WebFallbackThatMustNotRun:
+    def search(self, query: str) -> list[WebSearchResult]:
+        raise AssertionError("web fallback must not run")
+
+
+class WebGraderThatMustNotRun:
+    def grade(
+        self,
+        question: str,
+        results: list[WebSearchResult],
+    ) -> WebGrade:
+        raise AssertionError("web grader must not run")
+
+
+class RecordingWebSearch:
+    def __init__(self, events: list[str], results: list[WebSearchResult]):
+        self.events = events
+        self.results = results
+
+    def search(self, query: str) -> list[WebSearchResult]:
+        self.events.append(f"web:{query}")
+        return self.results
+
+
+class RecordingWebGrader:
+    def __init__(self, events: list[str], relevant: bool):
+        self.events = events
+        self.relevant = relevant
+
+    def grade(
+        self,
+        question: str,
+        results: list[WebSearchResult],
+    ) -> WebGrade:
+        urls = ",".join(result.url for result in results)
+        self.events.append(f"web_grade:{question}:{urls}")
+        return WebGrade(
+            relevant=self.relevant,
+            confidence=0.9,
+            reason="Decisão web controlada pelo teste.",
+        )
+
+
 class RecordingQueryRewriter:
     def __init__(self, events: list[str], rewritten_queries: list[str]):
         self.events = events
@@ -98,6 +148,8 @@ def test_linear_graph_answers_from_retrieved_documents() -> None:
         grader=RecordingGrader(events, relevant=True),
         query_preparer=IdentityQueryPreparer(),
         query_rewriter=RewriterThatMustNotRun(),
+        web_search=WebFallbackThatMustNotRun(),
+        web_grader=WebGraderThatMustNotRun(),
         answer_generator=RecordingAnswerGenerator(events),
         max_rag_attempts=2,
     )
@@ -122,8 +174,11 @@ def test_linear_graph_answers_from_retrieved_documents() -> None:
         ("retrieve_rag", "grade_rag"),
         ("grade_rag", "generate_answer"),
         ("grade_rag", "rewrite_query"),
-        ("grade_rag", "no_answer"),
+        ("grade_rag", "search_web"),
         ("rewrite_query", "retrieve_rag"),
+        ("search_web", "grade_web"),
+        ("grade_web", "generate_answer"),
+        ("grade_web", "no_answer"),
         ("generate_answer", "__end__"),
         ("no_answer", "__end__"),
     }
@@ -141,6 +196,8 @@ def test_linear_graph_fails_closed_when_retrieval_is_empty() -> None:
         grader=RecordingGrader(events, relevant=False),
         query_preparer=IdentityQueryPreparer(),
         query_rewriter=RewriterThatMustNotRun(),
+        web_search=RecordingWebSearch(events, []),
+        web_grader=RecordingWebGrader(events, relevant=False),
         answer_generator=LangChainAnswerGenerator(ModelThatMustNotRun()),
         max_rag_attempts=1,
     )
@@ -151,6 +208,8 @@ def test_linear_graph_fails_closed_when_retrieval_is_empty() -> None:
     assert events == [
         "retrieve:Pergunta sem cobertura",
         "grade:Pergunta sem cobertura:",
+        "web:Pergunta sem cobertura",
+        "web_grade:Pergunta sem cobertura:",
     ]
 
 
@@ -168,6 +227,8 @@ def test_irrelevant_documents_do_not_reach_answer_generator() -> None:
         grader=RecordingGrader(events, relevant=False),
         query_preparer=IdentityQueryPreparer(),
         query_rewriter=RewriterThatMustNotRun(),
+        web_search=RecordingWebSearch(events, []),
+        web_grader=RecordingWebGrader(events, relevant=False),
         answer_generator=LangChainAnswerGenerator(ModelThatMustNotRun()),
         max_rag_attempts=1,
     )
@@ -178,6 +239,8 @@ def test_irrelevant_documents_do_not_reach_answer_generator() -> None:
     assert events == [
         "retrieve:Qual é a política de retenção?",
         "grade:Qual é a política de retenção?:unrelated-1",
+        "web:Qual é a política de retenção?",
+        "web_grade:Qual é a política de retenção?:",
     ]
 
 
@@ -255,6 +318,8 @@ def test_graph_answers_after_one_rewrite() -> None:
         grader=EvidenceGrader(events, relevant_chunk_id="oauth-1"),
         query_preparer=IdentityQueryPreparer(),
         query_rewriter=RecordingQueryRewriter(events, [rewritten_query]),
+        web_search=WebFallbackThatMustNotRun(),
+        web_grader=WebGraderThatMustNotRun(),
         answer_generator=RecordingAnswerGenerator(events),
         max_rag_attempts=2,
     )
@@ -285,6 +350,8 @@ def test_graph_stops_exactly_at_configured_attempt_limit() -> None:
             events,
             ["consulta reescrita 1", "consulta reescrita 2"],
         ),
+        web_search=RecordingWebSearch(events, []),
+        web_grader=RecordingWebGrader(events, relevant=False),
         answer_generator=LangChainAnswerGenerator(ModelThatMustNotRun()),
         max_rag_attempts=3,
     )
@@ -301,4 +368,49 @@ def test_graph_stops_exactly_at_configured_attempt_limit() -> None:
         "rewrite:consulta reescrita 1",
         "retrieve:consulta reescrita 2",
         "grade:Pergunta sem cobertura:",
+        "web:consulta reescrita 2",
+        "web_grade:Pergunta sem cobertura:",
+    ]
+
+
+def test_graph_answers_from_web_only_after_rag_is_exhausted() -> None:
+    events: list[str] = []
+    web_result = WebSearchResult(
+        title="Keycloak OAuth documentation",
+        url="https://www.keycloak.org/docs/latest/securing_apps/",
+        content="Keycloak exposes OAuth 2.0 authorization endpoints.",
+        score=0.93,
+        provider="test",
+    )
+    graph = build_rag_graph(
+        retriever=RecordingRetriever(events, []),
+        grader=RecordingGrader(events, relevant=False),
+        query_preparer=IdentityQueryPreparer(),
+        query_rewriter=RewriterThatMustNotRun(),
+        web_search=RecordingWebSearch(events, [web_result]),
+        web_grader=RecordingWebGrader(events, relevant=True),
+        answer_generator=RecordingAnswerGenerator(events),
+        max_rag_attempts=1,
+    )
+
+    result = graph.invoke({"question": "Como configurar OAuth no Keycloak?"})
+
+    assert result == {
+        "answer": "Use o refresh token descrito no guia.",
+        "source": "web",
+    }
+    assert web_result.metadata == {
+        "source": "https://www.keycloak.org/docs/latest/securing_apps/",
+        "url": "https://www.keycloak.org/docs/latest/securing_apps/",
+        "title": "Keycloak OAuth documentation",
+        "provider": "test",
+    }
+    assert events == [
+        "retrieve:Como configurar OAuth no Keycloak?",
+        "grade:Como configurar OAuth no Keycloak?:",
+        "web:Como configurar OAuth no Keycloak?",
+        "web_grade:Como configurar OAuth no Keycloak?:"
+        "https://www.keycloak.org/docs/latest/securing_apps/",
+        "answer:Como configurar OAuth no Keycloak?:"
+        "https://www.keycloak.org/docs/latest/securing_apps/",
     ]

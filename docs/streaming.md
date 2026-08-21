@@ -32,7 +32,9 @@ event: status
 data: {"stage":"rag_search","message":"Buscando na base de conhecimento..."}
 ```
 
-Os stages implementados sao `rag_search`, `query_rewrite` e `generating`.
+Os stages implementados sao `rag_search`, `query_rewrite`, `web_search` e
+`generating`. `web_search` so aparece depois que o limite do RAG interno e
+atingido.
 
 ### `sources`
 
@@ -56,8 +58,8 @@ data: {"text":"Resposta"}
 ```
 
 O adapter aceita mensagens de assistente somente quando `langgraph_node` e
-`generate_answer`. A mensagem humana registrada no estado e tokens de grading,
-structured output ou query rewrite sao descartados. Quando o runtime nao
+`generate_answer`. A mensagem humana registrada no estado e tokens de grading
+RAG/web, structured output ou query rewrite sao descartados. Quando o runtime nao
 produz chunks incrementais, o adapter envia a resposta terminal inteira como um
 unico token de fallback.
 

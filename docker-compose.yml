@@ -30,6 +30,12 @@ x-rag-environment: &rag-environment
   <<: *knowledge-environment
   LLM_MODEL: ${LLM_MODEL:-}
   MAX_RAG_ATTEMPTS: ${MAX_RAG_ATTEMPTS:-2}
+  WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-tavily}
+  WEB_SEARCH_MAX_RESULTS: ${WEB_SEARCH_MAX_RESULTS:-5}
+  WEB_SEARCH_DEPTH: ${WEB_SEARCH_DEPTH:-basic}
+  WEB_SEARCH_TIMEOUT_SECONDS: ${WEB_SEARCH_TIMEOUT_SECONDS:-10}
+  TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+  TAVILY_BASE_URL: ${TAVILY_BASE_URL:-https://api.tavily.com}
 
 services:
   chroma:

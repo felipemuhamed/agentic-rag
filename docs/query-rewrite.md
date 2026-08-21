@@ -7,7 +7,7 @@ documentos recuperados:
 retrieve_rag -> grade_rag -> rewrite_query -> retrieve_rag
                     |
                     +-> generate_answer, se relevante
-                    +-> no_answer, se o limite foi atingido
+                    +-> search_web, se o limite foi atingido
 ```
 
 ## Semantica do contador
@@ -20,7 +20,7 @@ Com o padrao `MAX_RAG_ATTEMPTS=2`, o fluxo permite:
 
 1. retrieval da pergunta original;
 2. no maximo um rewrite e um segundo retrieval;
-3. resposta, se o segundo grade for positivo, ou `no_answer` caso contrario.
+3. resposta, se o segundo grade for positivo, ou fallback web caso contrario.
 
 O construtor do grafo e as settings rejeitam valores menores que um. Como a
 decisao de continuar depende do contador, uma query reescrita igual a anterior
@@ -52,12 +52,12 @@ tentativas pertence a uma etapa posterior de observabilidade e avaliacao.
 MAX_RAG_ATTEMPTS=2
 ```
 
-O Compose repassa essa variavel somente ao servico `rag`. Nenhuma nova imagem
-ou dependencia de provider e necessaria: grader, rewriter e gerador usam o
-mesmo chat model com tags distintas.
+O Compose repassa essa variavel aos servicos `api` e `rag`. Grader, rewriter e
+gerador usam o mesmo chat model com tags distintas.
 
 ## Limites
 
-O ciclo ainda nao adiciona fallback web ou citacoes. A memoria conversacional
-posterior apenas prepara a intencao antes da primeira busca; ao esgotar as
-tentativas internas, o destino ainda e `no_answer`.
+O ciclo interno continua limitado e independente da busca externa. Ao esgotar
+as tentativas, a ultima `search_query` e entregue uma unica vez ao
+`WebSearchProvider`. Nao existe retorno da web para o ciclo de rewrite. Citacoes
+continuam fora desta etapa.

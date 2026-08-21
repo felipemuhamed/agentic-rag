@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 RAG_SEARCH_MESSAGE = "Buscando na base de conhecimento..."
 QUERY_REWRITE_MESSAGE = "Reformulando a busca..."
+WEB_SEARCH_MESSAGE = "Buscando fontes externas..."
 GENERATING_MESSAGE = "Gerando a resposta..."
 PUBLIC_ERROR_MESSAGE = "Não foi possível concluir a resposta."
 
@@ -80,13 +81,18 @@ class LangGraphStreamAdapter:
                                     QUERY_REWRITE_MESSAGE,
                                 )
                                 last_status = "query_rewrite"
-                            elif last_status != "generating":
-                                yield _status("generating", GENERATING_MESSAGE)
-                                last_status = "generating"
+                            elif last_status != "web_search":
+                                yield _status("web_search", WEB_SEARCH_MESSAGE)
+                                last_status = "web_search"
 
                         elif node_name == "rewrite_query":
                             yield _status("rag_search", RAG_SEARCH_MESSAGE)
                             last_status = "rag_search"
+
+                        elif node_name == "grade_web":
+                            if last_status != "generating":
+                                yield _status("generating", GENERATING_MESSAGE)
+                                last_status = "generating"
 
                         elif node_name in {"generate_answer", "no_answer"}:
                             final_result = _terminal_result(update)
@@ -179,6 +185,6 @@ def _terminal_result(update: Mapping[str, object]) -> tuple[str, str]:
     source = update.get("source")
     if not isinstance(answer, str) or not answer:
         raise RuntimeError("terminal graph update does not contain an answer")
-    if not isinstance(source, str) or source not in {"rag", "none"}:
+    if not isinstance(source, str) or source not in {"rag", "web", "none"}:
         raise RuntimeError("terminal graph update contains an invalid source")
     return answer, source

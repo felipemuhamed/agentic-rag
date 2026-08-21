@@ -7,11 +7,14 @@ from app.knowledge.retrieval.models import (
     RetrievedDocument,
 )
 from app.llm.rag_grader import RagGrade
+from app.llm.web_grader import WebGrade
 from app.streaming.adapter import (
     GENERATING_MESSAGE,
     PUBLIC_ERROR_MESSAGE,
+    WEB_SEARCH_MESSAGE,
     LangGraphStreamAdapter,
 )
+from app.websearch.models import WebSearchResult
 
 
 @dataclass
@@ -174,6 +177,15 @@ def test_no_answer_is_sent_as_final_token_before_done() -> None:
         [
             ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
             ("updates", {"grade_rag": {"rag_relevant": False}}),
+            ("updates", {"search_web": {"web_results": []}}),
+            (
+                "messages",
+                (
+                    FakeMessage("SEGREDO DO WEB GRADER"),
+                    {"langgraph_node": "grade_web"},
+                ),
+            ),
+            ("updates", {"grade_web": {"web_relevant": False}}),
             (
                 "updates",
                 {
@@ -195,10 +207,21 @@ def test_no_answer_is_sent_as_final_token_before_done() -> None:
     assert event_names(events) == [
         "status",
         "status",
+        "status",
         "sources",
         "token",
         "done",
     ]
+    statuses = [event.data for event in events if event.event == "status"]
+    assert statuses[1] == {
+        "stage": "web_search",
+        "message": WEB_SEARCH_MESSAGE,
+    }
+    assert statuses[2] == {
+        "stage": "generating",
+        "message": GENERATING_MESSAGE,
+    }
+    assert "SEGREDO" not in "".join(event.to_sse() for event in events)
     assert events[-2].data == {"text": "Informação insuficiente."}
 
 
@@ -255,6 +278,16 @@ class RewriterThatMustNotRun:
         raise AssertionError("rewriter must not run")
 
 
+class WebFallbackThatMustNotRun:
+    def search(self, query: str) -> list[object]:
+        raise AssertionError("web fallback must not run")
+
+
+class WebGraderThatMustNotRun:
+    def grade(self, question: str, results: list[object]) -> object:
+        raise AssertionError("web grader must not run")
+
+
 class StaticAnswerGenerator:
     def generate(self, question: str, documents: list[RetrievedDocument]) -> str:
         return "Resposta do grafo compilado."
@@ -266,6 +299,8 @@ def test_adapter_accepts_current_compiled_langgraph_stream_shape() -> None:
         grader=RelevantGrader(),
         query_preparer=IdentityQueryPreparer(),
         query_rewriter=RewriterThatMustNotRun(),
+        web_search=WebFallbackThatMustNotRun(),
+        web_grader=WebGraderThatMustNotRun(),
         answer_generator=StaticAnswerGenerator(),
         max_rag_attempts=2,
     )
@@ -276,6 +311,70 @@ def test_adapter_accepts_current_compiled_langgraph_stream_shape() -> None:
 
     events = list(adapter.stream(conversation_id="c-1", message="Pergunta"))
 
+    assert [event.data["text"] for event in events if event.event == "token"] == [
+        "Resposta do grafo compilado."
+    ]
+    assert events[-1].event == "done"
+
+
+class EmptyRetriever:
+    def retrieve(self, query: str) -> RetrievalResult:
+        return RetrievalResult(
+            documents=[],
+            diagnostics=RetrievalDiagnostics(0, 0, 0, 0),
+        )
+
+
+class InsufficientRagGrader:
+    def grade(self, question: str, documents: list[object]) -> RagGrade:
+        return RagGrade(relevant=False, confidence=1.0, reason="Insuficiente.")
+
+
+class StaticWebSearch:
+    def search(self, query: str) -> list[WebSearchResult]:
+        return [
+            WebSearchResult(
+                title="Fonte externa",
+                url="https://example.com/oauth",
+                content="Evidência externa suficiente.",
+                score=0.9,
+                provider="test",
+            )
+        ]
+
+
+class RelevantWebGrader:
+    def grade(
+        self,
+        question: str,
+        results: list[WebSearchResult],
+    ) -> WebGrade:
+        return WebGrade(relevant=True, confidence=1.0, reason="Suficiente.")
+
+
+def test_compiled_web_path_has_status_and_only_final_answer_token() -> None:
+    graph = build_rag_graph(
+        retriever=EmptyRetriever(),
+        grader=InsufficientRagGrader(),
+        query_preparer=IdentityQueryPreparer(),
+        query_rewriter=RewriterThatMustNotRun(),
+        web_search=StaticWebSearch(),
+        web_grader=RelevantWebGrader(),
+        answer_generator=StaticAnswerGenerator(),
+        max_rag_attempts=1,
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=1,
+    )
+
+    events = list(adapter.stream(conversation_id="c-web", message="Pergunta"))
+
+    assert [event.data["stage"] for event in events if event.event == "status"] == [
+        "rag_search",
+        "web_search",
+        "generating",
+    ]
     assert [event.data["text"] for event in events if event.event == "token"] == [
         "Resposta do grafo compilado."
     ]

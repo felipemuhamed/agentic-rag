@@ -1,7 +1,7 @@
 # Containers de desenvolvimento
 
 Esta estrutura containeriza os componentes implementados: API, knowledge
-ingestion/retrieval, RAG basico e o servidor Chroma. Ela nao representa o
+ingestion/retrieval, RAG com fallback web e o servidor Chroma. Ela nao representa o
 hardening de producao da Etapa 12.
 
 ## Imagens
@@ -10,9 +10,9 @@ O `Dockerfile` possui tres targets finais:
 
 | Target | Conteudo | Processo padrao |
 |---|---|---|
-| `api` | API HTTP, runtime RAG e adapter do provider | Uvicorn em `0.0.0.0:8000` |
+| `api` | API HTTP, runtime RAG, web search e adapters de provider | Uvicorn em `0.0.0.0:8000` |
 | `knowledge` | API base, client Chroma e Sentence Transformers | `agentic-rag-ingest` |
-| `rag` | Knowledge, LangGraph, grader, gerador e adapter de chat | `agentic-rag-ask` |
+| `rag` | Knowledge, LangGraph, graders, gerador e web search | `agentic-rag-ask` |
 
 Todos executam com o usuario sem privilegios `app` (`uid=10001`). As wheels sao
 construidas em stages separados e instaladas nas imagens finais sem ferramentas
@@ -64,6 +64,10 @@ curl -N http://127.0.0.1:8000/chat/stream \
   -d '{"conversationId":"demo-1","message":"Como renovar o token?"}'
 ```
 
+Configure tambem `TAVILY_API_KEY`. Ela nao e usada enquanto a evidencia interna
+for suficiente; sem a chave, apenas uma execucao que alcance o fallback termina
+com `error` publico.
+
 O runtime usa um checkpointer em memoria dentro do processo `api`. Repetir
 `conversationId` preserva o historico enquanto esse processo estiver vivo, mas
 reiniciar/recriar o container apaga as conversas. Replicas distintas tambem nao
@@ -92,8 +96,9 @@ docker compose run --rm retrieve "Como renovar um access token?"
 
 ### `rag`
 
-Executa o RAG das Etapas 4 a 6 e pertence ao profile `tools`. Configure no
-`.env` o `LLM_MODEL` no formato `provider:model` e as credenciais do provider:
+Executa o RAG ate a Etapa 9 e pertence ao profile `tools`. Configure no `.env`
+o `LLM_MODEL` no formato `provider:model`, as credenciais do LLM e
+`TAVILY_API_KEY`:
 
 ```bash
 docker compose build rag
@@ -105,7 +110,8 @@ defina `LLM_PROVIDER_PACKAGE` com o pacote de integracao correspondente antes
 do build e use um `LLM_MODEL` compativel. O `.env` completo e repassado apenas
 ao servico `rag`, permitindo fornecer as variaveis exigidas pelo adapter.
 `MAX_RAG_ATTEMPTS` define o total de retrievals, incluindo a consulta original,
-e tem padrao `2`.
+e tem padrao `2`. `WEB_SEARCH_MAX_RESULTS`, `WEB_SEARCH_DEPTH` e
+`WEB_SEARCH_TIMEOUT_SECONDS` controlam a unica chamada externa posterior.
 
 ## Persistencia
 
@@ -137,7 +143,9 @@ Esse ultimo comando e destrutivo para os dados dos volumes.
 O Compose le `.env` automaticamente. As variaveis documentadas em
 `.env.example` controlam portas, binds, tag, versao do Python, imagem Chroma,
 modelo, adapter do LLM, collection e parametros de chunking. API e Chroma
-aceitam conexoes do host apenas em `127.0.0.1` por padrao.
+aceitam conexoes do host apenas em `127.0.0.1` por padrao. A URL do endpoint
+Tavily pode ser substituida por `TAVILY_BASE_URL` para testes ou gateways
+aprovados.
 
 O Chroma desta configuracao de desenvolvimento nao possui autenticacao. Nao
 publique sua porta em uma interface externa sem adicionar os controles da etapa

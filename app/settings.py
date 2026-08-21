@@ -43,5 +43,17 @@ class Settings(BaseSettings):
 
     max_rag_attempts: int = Field(default=2, ge=1)
 
+    web_search_provider: Literal["tavily"] = "tavily"
+    web_search_max_results: int = Field(default=5, ge=1, le=20)
+    web_search_depth: Literal[
+        "basic",
+        "advanced",
+        "fast",
+        "ultra-fast",
+    ] = "basic"
+    web_search_timeout_seconds: float = Field(default=10.0, gt=0)
+    tavily_api_key: str = ""
+    tavily_base_url: str = "https://api.tavily.com"
+
 
 settings = Settings()

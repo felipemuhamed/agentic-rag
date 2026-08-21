@@ -66,6 +66,16 @@ class RewriterThatMustNotRun:
         raise AssertionError("rewriter must not run")
 
 
+class WebFallbackThatMustNotRun:
+    def search(self, query: str) -> list[object]:
+        raise AssertionError("web fallback must not run")
+
+
+class WebGraderThatMustNotRun:
+    def grade(self, question: str, results: list[object]) -> object:
+        raise AssertionError("web grader must not run")
+
+
 class QueryEchoAnswerGenerator:
     def generate(
         self,
@@ -83,6 +93,8 @@ def test_follow_up_uses_only_its_thread_history() -> None:
         grader=RelevantGrader(),
         query_preparer=preparer,
         query_rewriter=RewriterThatMustNotRun(),
+        web_search=WebFallbackThatMustNotRun(),
+        web_grader=WebGraderThatMustNotRun(),
         answer_generator=QueryEchoAnswerGenerator(),
         max_rag_attempts=1,
         checkpointer=InMemorySaver(),

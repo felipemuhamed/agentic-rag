@@ -17,7 +17,7 @@ FROM build-base AS api-builder
 
 ARG LLM_PROVIDER_PACKAGE=langchain-openai==1.5.1
 
-RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag]' "${LLM_PROVIDER_PACKAGE}"
+RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag,web]' "${LLM_PROVIDER_PACKAGE}"
 
 
 FROM build-base AS knowledge-builder
@@ -29,7 +29,7 @@ FROM build-base AS rag-builder
 
 ARG LLM_PROVIDER_PACKAGE=langchain-openai==1.5.1
 
-RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag]' "${LLM_PROVIDER_PACKAGE}"
+RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag,web]' "${LLM_PROVIDER_PACKAGE}"
 
 
 FROM python:${PYTHON_VERSION}-slim AS runtime-base
@@ -53,7 +53,7 @@ ARG LLM_PROVIDER_PACKAGE=langchain-openai==1.5.1
 
 RUN --mount=type=bind,from=api-builder,source=/wheels,target=/wheels \
     python -m pip install --no-index --find-links=/wheels \
-    'agentic-rag[knowledge,rag]' "${LLM_PROVIDER_PACKAGE}"
+    'agentic-rag[knowledge,rag,web]' "${LLM_PROVIDER_PACKAGE}"
 
 USER app
 
@@ -81,7 +81,7 @@ ARG LLM_PROVIDER_PACKAGE=langchain-openai==1.5.1
 
 RUN --mount=type=bind,from=rag-builder,source=/wheels,target=/wheels \
     python -m pip install --no-index --find-links=/wheels \
-    'agentic-rag[knowledge,rag]' "${LLM_PROVIDER_PACKAGE}"
+    'agentic-rag[knowledge,rag,web]' "${LLM_PROVIDER_PACKAGE}"
 
 USER app
 

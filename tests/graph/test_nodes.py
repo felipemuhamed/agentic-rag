@@ -6,6 +6,8 @@ from app.knowledge.retrieval.models import (
 )
 from app.llm.answer_generator import NO_CONTEXT_ANSWER
 from app.llm.rag_grader import RagGrade
+from app.llm.web_grader import WebGrade
+from app.websearch.models import WebSearchResult
 
 
 def make_document() -> RetrievedDocument:
@@ -15,6 +17,16 @@ def make_document() -> RetrievedDocument:
         metadata={"source": "guia.md"},
         retrieval_score=0.7,
         rerank_score=0.9,
+    )
+
+
+def make_web_result() -> WebSearchResult:
+    return WebSearchResult(
+        title="Documentação Keycloak",
+        url="https://www.keycloak.org/docs/latest/",
+        content="O Keycloak suporta configuração OAuth.",
+        score=0.9,
+        provider="test",
     )
 
 
@@ -96,6 +108,34 @@ class StubQueryPreparer:
         return self.prepared_query or question
 
 
+class StubWebSearch:
+    def __init__(self, results: list[WebSearchResult] | None = None):
+        self.results = results or []
+        self.queries: list[str] = []
+
+    def search(self, query: str) -> list[WebSearchResult]:
+        self.queries.append(query)
+        return self.results
+
+
+class StubWebGrader:
+    def __init__(self, relevant: bool = False):
+        self.relevant = relevant
+        self.calls: list[tuple[str, list[WebSearchResult]]] = []
+
+    def grade(
+        self,
+        question: str,
+        results: list[WebSearchResult],
+    ) -> WebGrade:
+        self.calls.append((question, results))
+        return WebGrade(
+            relevant=self.relevant,
+            confidence=0.9,
+            reason="Evidência web suficiente." if self.relevant else "Insuficiente.",
+        )
+
+
 def test_nodes_are_independently_callable() -> None:
     document = make_document()
     retriever = StubRetriever([document])
@@ -108,6 +148,8 @@ def test_nodes_are_independently_callable() -> None:
         grader=grader,
         query_preparer=preparer,
         query_rewriter=rewriter,
+        web_search=StubWebSearch(),
+        web_grader=StubWebGrader(),
         answer_generator=generator,
         max_rag_attempts=2,
     )
@@ -141,6 +183,8 @@ def test_nodes_are_independently_callable() -> None:
         "prepared_query": "Como funciona?",
         "search_query": "Como funciona?",
         "retrieval_attempts": 0,
+        "web_results": [],
+        "web_relevant": False,
     }
     assert preparer.calls == [("Como funciona?", [])]
     assert retriever.queries == ["Como funciona?"]
@@ -170,6 +214,8 @@ def test_prepare_query_rejects_blank_question() -> None:
         grader=StubGrader(),
         query_preparer=StubQueryPreparer(),
         query_rewriter=StubQueryRewriter(),
+        web_search=StubWebSearch(),
+        web_grader=StubWebGrader(),
         answer_generator=StubAnswerGenerator(),
         max_rag_attempts=2,
     )
@@ -182,13 +228,18 @@ def test_prepare_query_rejects_blank_question() -> None:
         raise AssertionError("blank question should fail")
 
 
-def test_irrelevant_grade_routes_to_no_answer() -> None:
+def test_irrelevant_rag_routes_through_web_before_no_answer() -> None:
     rewriter = StubQueryRewriter()
+    web_result = make_web_result()
+    web_search = StubWebSearch([web_result])
+    web_grader = StubWebGrader(relevant=False)
     nodes = RagNodes(
         retriever=StubRetriever([make_document()]),
         grader=StubGrader(relevant=False),
         query_preparer=StubQueryPreparer(),
         query_rewriter=rewriter,
+        web_search=web_search,
+        web_grader=web_grader,
         answer_generator=StubAnswerGenerator(),
         max_rag_attempts=2,
     )
@@ -205,7 +256,11 @@ def test_irrelevant_grade_routes_to_no_answer() -> None:
     rewritten = nodes.rewrite_query(retry_state)
     terminal_state = {**retry_state, "retrieval_attempts": 2}
     terminal_route = nodes.route_after_grade(terminal_state)
-    result = nodes.no_answer(terminal_state)
+    web_update = nodes.search_web(terminal_state)
+    web_state = {**terminal_state, **web_update}
+    web_grade = nodes.grade_web(web_state)
+    web_route = nodes.route_after_web_grade({**web_state, **web_grade})
+    result = nodes.no_answer({**web_state, **web_grade})
 
     assert route == "rewrite"
     assert rewritten == {"search_query": "consulta reescrita"}
@@ -216,7 +271,18 @@ def test_irrelevant_grade_routes_to_no_answer() -> None:
             "Faltam termos específicos.",
         )
     ]
-    assert terminal_route == "no_answer"
+    assert terminal_route == "web"
+    assert web_search.queries == ["consulta original"]
+    assert web_update == {"web_results": [web_result]}
+    assert web_grader.calls == [
+        ("Pergunta original autocontida", [web_result])
+    ]
+    assert web_grade == {
+        "web_relevant": False,
+        "web_confidence": 0.9,
+        "web_reason": "Insuficiente.",
+    }
+    assert web_route == "no_answer"
     assert result["answer"] == NO_CONTEXT_ANSWER
     assert result["source"] == "none"
     assert [message.content for message in result["messages"]] == [
@@ -232,6 +298,8 @@ def test_max_rag_attempts_must_be_positive() -> None:
             grader=StubGrader(),
             query_preparer=StubQueryPreparer(),
             query_rewriter=StubQueryRewriter(),
+            web_search=StubWebSearch(),
+            web_grader=StubWebGrader(),
             answer_generator=StubAnswerGenerator(),
             max_rag_attempts=0,
         )

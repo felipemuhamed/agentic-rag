@@ -8,6 +8,8 @@ from app.llm.answer_generator import AnswerGenerator, NO_CONTEXT_ANSWER
 from app.llm.query_preparer import QueryPreparer
 from app.llm.query_rewriter import QueryRewriter
 from app.llm.rag_grader import RagGrader
+from app.llm.web_grader import WebGrader
+from app.websearch.base import WebSearchProvider
 
 
 class RetrievalService(Protocol):
@@ -22,6 +24,8 @@ class RagNodes:
         grader: RagGrader,
         query_preparer: QueryPreparer,
         query_rewriter: QueryRewriter,
+        web_search: WebSearchProvider,
+        web_grader: WebGrader,
         answer_generator: AnswerGenerator,
         max_rag_attempts: int,
     ):
@@ -31,6 +35,8 @@ class RagNodes:
         self._grader = grader
         self._query_preparer = query_preparer
         self._query_rewriter = query_rewriter
+        self._web_search = web_search
+        self._web_grader = web_grader
         self._answer_generator = answer_generator
         self._max_rag_attempts = max_rag_attempts
 
@@ -49,6 +55,8 @@ class RagNodes:
             "prepared_query": prepared_query,
             "search_query": prepared_query,
             "retrieval_attempts": 0,
+            "web_results": [],
+            "web_relevant": False,
         }
 
     def retrieve_rag(self, state: RagState) -> dict[str, object]:
@@ -73,12 +81,12 @@ class RagNodes:
     def route_after_grade(
         self,
         state: RagState,
-    ) -> Literal["answer", "rewrite", "no_answer"]:
+    ) -> Literal["answer", "rewrite", "web"]:
         if state["rag_relevant"]:
             return "answer"
         if state["retrieval_attempts"] < self._max_rag_attempts:
             return "rewrite"
-        return "no_answer"
+        return "web"
 
     def rewrite_query(self, state: RagState) -> dict[str, object]:
         rewritten_query = self._query_rewriter.rewrite(
@@ -88,15 +96,40 @@ class RagNodes:
         )
         return {"search_query": rewritten_query}
 
+    def search_web(self, state: RagState) -> dict[str, object]:
+        return {"web_results": self._web_search.search(state["search_query"])}
+
+    def grade_web(self, state: RagState) -> dict[str, object]:
+        grade = self._web_grader.grade(
+            state["prepared_query"],
+            state.get("web_results", []),
+        )
+        return {
+            "web_relevant": grade.relevant,
+            "web_confidence": grade.confidence,
+            "web_reason": grade.reason,
+        }
+
+    def route_after_web_grade(
+        self,
+        state: RagState,
+    ) -> Literal["answer", "no_answer"]:
+        return "answer" if state["web_relevant"] else "no_answer"
+
     def generate_answer(self, state: RagState) -> dict[str, object]:
-        documents = state.get("documents", [])
+        from_web = state.get("web_relevant") is True
+        documents = (
+            state.get("web_results", [])
+            if from_web
+            else state.get("documents", [])
+        )
         answer = self._answer_generator.generate(
             state["prepared_query"],
             documents,
         )
         return {
             "answer": answer,
-            "source": "rag",
+            "source": "web" if from_web else "rag",
             "messages": [
                 HumanMessage(content=state["question"]),
                 AIMessage(content=answer),

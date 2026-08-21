@@ -6,6 +6,7 @@ from app.llm.answer_generator import (
 from app.llm.rag_grader import LangChainRagGrader, RagGrade, RagGrader
 from app.llm.query_rewriter import LangChainQueryRewriter, QueryRewriter
 from app.llm.query_preparer import LangChainQueryPreparer, QueryPreparer
+from app.llm.web_grader import LangChainWebGrader, WebGrade, WebGrader
 
 __all__ = [
     "AnswerGenerator",
@@ -13,9 +14,12 @@ __all__ = [
     "LangChainRagGrader",
     "LangChainQueryRewriter",
     "LangChainQueryPreparer",
+    "LangChainWebGrader",
     "NO_CONTEXT_ANSWER",
     "QueryRewriter",
     "QueryPreparer",
     "RagGrade",
     "RagGrader",
+    "WebGrade",
+    "WebGrader",
 ]

@@ -27,7 +27,7 @@ evidencia inadequada chegue ao modelo de resposta.
 
 Etapa 6 (rewrite e retry): implementada. Grades negativos podem reescrever a
 consulta e repetir retrieval/grader ate `MAX_RAG_ATTEMPTS`. O limite inclui a
-consulta original e garante termino em `no_answer` sem loop infinito.
+consulta original e encerra o ciclo interno sem possibilidade de loop infinito.
 
 Etapa 7 (streaming SSE): implementada. `POST /chat/stream` traduz os eventos do
 LangGraph para o protocolo publico `status`, `sources`, `token`, `done` e
@@ -36,6 +36,10 @@ LangGraph para o protocolo publico `status`, `sources`, `token`, `done` e
 Etapa 8 (threads e memoria): implementada. `conversationId` e usado como
 `configurable.thread_id`; um checkpointer em memoria isola conversas e o
 historico serve apenas para transformar follow-ups em consultas autocontidas.
+
+Etapa 9 (fallback web): implementada. Depois de esgotar o RAG interno, o grafo
+consulta um `WebSearchProvider` substituivel, avalia a evidencia externa com um
+grader proprio e so entao responde com `source=web` ou termina em `no_answer`.
 
 ## Requisitos
 
@@ -46,7 +50,7 @@ historico serve apenas para transformar follow-ups em consultas autocontidas.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[knowledge,rag,dev]'
+python -m pip install -e '.[knowledge,rag,web,dev]'
 # Exemplo de adapter; troque pelo pacote do provider escolhido.
 python -m pip install 'langchain-openai>=1.5,<2'
 cp .env.example .env
@@ -70,6 +74,9 @@ curl -N http://127.0.0.1:8000/chat/stream \
 
 Reutilizar o mesmo `conversationId` mantem o contexto durante a vida do processo
 da API. IDs diferentes nao compartilham mensagens.
+
+O fallback concreto usa Tavily. Defina `TAVILY_API_KEY` para permitir buscas
+externas; a chave so e exigida quando o RAG interno for insuficiente.
 
 ## Executar com Docker Compose
 
@@ -107,9 +114,10 @@ Depois de ingerir os documentos, o retriever pode ser executado isoladamente:
 docker compose run --rm retrieve "Como renovar um access token?"
 ```
 
-Para executar o RAG completo, configure `LLM_MODEL` e as credenciais exigidas
-pelo provider no `.env`. A imagem usa `langchain-openai==1.5.1` por padrao; o
-build arg `LLM_PROVIDER_PACKAGE` permite substituir esse adapter:
+Para executar o RAG completo, configure `LLM_MODEL`, as credenciais exigidas
+pelo provider de LLM e `TAVILY_API_KEY` no `.env`. A imagem usa
+`langchain-openai==1.5.1` por padrao; o build arg `LLM_PROVIDER_PACKAGE` permite
+substituir esse adapter:
 
 ```bash
 docker compose build rag
@@ -202,15 +210,19 @@ Por exemplo, para o adapter OpenAI:
 ```bash
 export LLM_MODEL=openai:gpt-4.1-mini
 export OPENAI_API_KEY=...
+export TAVILY_API_KEY=...
 agentic-rag-ask "Como renovar um access token?"
 ```
 
 A CLI consulta o Chroma configurado, classifica os chunks e so os passa ao
 modelo de resposta quando o grader considera a evidencia suficiente. Caso
 contrario, pode reescrever a consulta e tentar novamente dentro do limite
-configurado. A saida publica continua contendo `answer` e `source`. Os contratos
-estao detalhados em [`docs/basic-rag.md`](docs/basic-rag.md),
+configurado. Se o RAG continuar insuficiente, executa busca web e avalia os
+resultados antes de responder. A saida publica continua contendo `answer` e
+`source`, agora com valores `rag`, `web` ou `none`. Os contratos estao
+detalhados em [`docs/basic-rag.md`](docs/basic-rag.md),
 [`docs/rag-grader.md`](docs/rag-grader.md) e
 [`docs/query-rewrite.md`](docs/query-rewrite.md). O protocolo HTTP/SSE esta em
 [`docs/streaming.md`](docs/streaming.md) e a memoria conversacional em
-[`docs/memory.md`](docs/memory.md).
+[`docs/memory.md`](docs/memory.md). O fallback externo esta em
+[`docs/web-fallback.md`](docs/web-fallback.md).
