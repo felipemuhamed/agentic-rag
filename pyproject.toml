@@ -37,6 +37,7 @@ dev = [
 agentic-rag-ingest = "app.knowledge.ingestion.cli:main"
 agentic-rag-retrieve = "app.knowledge.retrieval.cli:main"
 agentic-rag-ask = "app.graph.cli:main"
+agentic-rag-evaluate = "app.evaluation.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]

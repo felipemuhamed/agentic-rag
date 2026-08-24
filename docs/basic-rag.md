@@ -88,5 +88,6 @@ rewriter nem gerador. Consulte [`memory.md`](memory.md).
 ## Limites atuais
 
 O fluxo ainda nao possui persistencia conversacional duravel. A avaliacao
-reproduzivel pertence a Etapa 11 e o hardening operacional a Etapa 12. O
+reproduzivel da Etapa 11 esta descrita em `evaluation.md`; o hardening
+operacional pertence a Etapa 12. O
 streaming fica em um adapter externo ao grafo.

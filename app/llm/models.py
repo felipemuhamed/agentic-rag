@@ -1,7 +1,11 @@
 from typing import Any
 
 
-def create_chat_model(model_name: str) -> Any:
+def create_chat_model(
+    model_name: str,
+    *,
+    temperature: float | None = None,
+) -> Any:
     normalized_name = model_name.strip()
     if not normalized_name:
         raise ValueError(
@@ -11,4 +15,6 @@ def create_chat_model(model_name: str) -> Any:
 
     from langchain.chat_models import init_chat_model
 
-    return init_chat_model(normalized_name)
+    if temperature is None:
+        return init_chat_model(normalized_name)
+    return init_chat_model(normalized_name, temperature=temperature)

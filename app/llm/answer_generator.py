@@ -1,3 +1,5 @@
+from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any, Protocol, Sequence
 
 from app.llm.context import GroundingDocument, serialize_grounding_documents
@@ -33,6 +35,14 @@ class ChatModel(Protocol):
     def invoke(self, input: object) -> Any: ...
 
 
+@dataclass(frozen=True, slots=True)
+class AnswerGeneration:
+    answer: str
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
+
 class LangChainAnswerGenerator:
     def __init__(self, model: ChatModel):
         self._model = model
@@ -43,10 +53,23 @@ class LangChainAnswerGenerator:
         documents: Sequence[GroundingDocument],
         sources: Sequence[Source],
     ) -> str:
+        return self.generate_with_metadata(question, documents, sources).answer
+
+    def generate_with_metadata(
+        self,
+        question: str,
+        documents: Sequence[GroundingDocument],
+        sources: Sequence[Source],
+    ) -> AnswerGeneration:
         if len(documents) != len(sources):
             raise ValueError("documents and sources must have the same length")
         if not documents:
-            return NO_CONTEXT_ANSWER
+            return AnswerGeneration(
+                answer=NO_CONTEXT_ANSWER,
+                input_tokens=0,
+                output_tokens=0,
+                total_tokens=0,
+            )
 
         context = serialize_grounding_documents(documents, sources)
         response = self._model.invoke(
@@ -58,4 +81,35 @@ class LangChainAnswerGenerator:
                 ),
             ]
         )
-        return extract_response_text(response)
+        input_tokens, output_tokens, total_tokens = _response_usage(response)
+        return AnswerGeneration(
+            answer=extract_response_text(response),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+        )
+
+
+def _response_usage(response: object) -> tuple[int | None, int | None, int | None]:
+    usage = getattr(response, "usage_metadata", None)
+    if not isinstance(usage, Mapping):
+        response_metadata = getattr(response, "response_metadata", None)
+        if isinstance(response_metadata, Mapping):
+            usage = response_metadata.get("token_usage")
+    if not isinstance(usage, Mapping):
+        return None, None, None
+
+    input_tokens = _token_count(usage, "input_tokens", "prompt_tokens")
+    output_tokens = _token_count(usage, "output_tokens", "completion_tokens")
+    total_tokens = _token_count(usage, "total_tokens")
+    if total_tokens is None and input_tokens is not None and output_tokens is not None:
+        total_tokens = input_tokens + output_tokens
+    return input_tokens, output_tokens, total_tokens
+
+
+def _token_count(usage: Mapping[object, object], *names: str) -> int | None:
+    for name in names:
+        value = usage.get(name)
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            return value
+    return None

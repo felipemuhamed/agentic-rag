@@ -64,5 +64,6 @@ docker compose run --rm retrieve "pergunta conhecida"
 
 Na primeira execucao, embedding e reranker sao baixados para o cache de modelos.
 Para avaliar qualidade, use perguntas cujo documento esperado seja conhecido e
-confira `chunk_id`, `source`, `section`, scores e posicao final. O dataset e as
-metricas comparaveis serao formalizados apenas na Etapa 11.
+confira `chunk_id`, `source`, `section`, scores e posicao final. A Etapa 11
+formaliza esse processo com dataset, Recall@K, MRR e relatorios comparaveis em
+[`evaluation.md`](evaluation.md).

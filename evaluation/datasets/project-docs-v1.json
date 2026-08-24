@@ -1,0 +1,70 @@
+{
+  "schema_version": "1.0",
+  "name": "agentic-rag-project-docs",
+  "version": "1.0.0",
+  "description": "Perguntas reais de manutencao sobre os contratos versionados do projeto.",
+  "corpus": [
+    "docs/citations.md",
+    "docs/containers.md",
+    "docs/memory.md",
+    "docs/query-rewrite.md",
+    "docs/retrieval.md",
+    "docs/web-fallback.md"
+  ],
+  "cases": [
+    {
+      "id": "citation-validation",
+      "question": "O que acontece quando a resposta cita um identificador de fonte que nao existe?",
+      "expected_documents": [
+        {"source": "docs/citations.md"}
+      ],
+      "reference_answer": "A resposta e rejeitada antes da emissao de fontes ou tokens e o stream termina com um evento de erro seguro.",
+      "tags": ["citations", "streaming"]
+    },
+    {
+      "id": "chroma-container",
+      "question": "Como o Chroma e executado no ambiente Docker Compose?",
+      "expected_documents": [
+        {"source": "docs/containers.md"}
+      ],
+      "reference_answer": "O Chroma roda em um container proprio com volume persistente e readiness HTTP antes dos servicos dependentes.",
+      "tags": ["containers", "chroma"]
+    },
+    {
+      "id": "conversation-isolation",
+      "question": "Como as conversas sao isoladas e qual e a limitacao atual da memoria?",
+      "expected_documents": [
+        {"source": "docs/memory.md"}
+      ],
+      "reference_answer": "O conversationId e mapeado para o thread_id do LangGraph; o checkpointer em memoria isola as threads, mas os dados se perdem ao reiniciar o processo e nao sao compartilhados entre replicas.",
+      "tags": ["memory", "threads"]
+    },
+    {
+      "id": "retry-budget",
+      "question": "O que MAX_RAG_ATTEMPTS contabiliza no ciclo de consulta?",
+      "expected_documents": [
+        {"source": "docs/query-rewrite.md"}
+      ],
+      "reference_answer": "MAX_RAG_ATTEMPTS limita o total de retrievals, incluindo a consulta original, e nao apenas a quantidade de rewrites.",
+      "tags": ["rewrite", "retrieval"]
+    },
+    {
+      "id": "retrieval-stages",
+      "question": "Quais sao as etapas executadas pelo KnowledgeRetriever antes de retornar os chunks finais?",
+      "expected_documents": [
+        {"source": "docs/retrieval.md"}
+      ],
+      "reference_answer": "O retriever gera o embedding da consulta, busca candidatos densos no Chroma, aplica MMR, calcula scores com o CrossEncoder e retorna os chunks reordenados.",
+      "tags": ["retrieval", "ranking"]
+    },
+    {
+      "id": "web-fallback-gates",
+      "question": "Em quais condicoes a busca web pode gerar uma resposta final?",
+      "expected_documents": [
+        {"source": "docs/web-fallback.md"}
+      ],
+      "reference_answer": "A busca web ocorre somente depois de esgotar as tentativas internas e sua evidencia ainda precisa ser aprovada pelo web grader antes da geracao da resposta.",
+      "tags": ["web", "gates"]
+    }
+  ]
+}

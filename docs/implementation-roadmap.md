@@ -18,7 +18,7 @@ seguinte nao deve ser implementada antes disso.
 | 8 | Threads e memoria por `conversationId` | Follow-up vira consulta independente e conversas ficam isoladas | Implementada; criterios cobertos por testes com checkpointer real |
 | 9 | Fallback web por interface substituivel | Web so executa apos falha interna; evidencia insuficiente resulta em `no_answer` | Implementada; ambos os gates e metadata de URL cobertos por testes |
 | 10 | Citacoes e proveniencia normalizadas | Toda citacao resolve para uma fonte real com metadata preservada | Implementada; validacao fechada e contrato SSE cobertos por testes |
-| 11 | Dataset e avaliacao reproduzivel | Baseline versionado com Recall@K e MRR ou nDCG, alem de grounding | Pendente |
+| 11 | Dataset e avaliacao reproduzivel | Baseline versionado com Recall@K e MRR ou nDCG, alem de grounding | Implementada; baseline offline e runner live cobertos por testes |
 | 12 | Hardening de producao | Persistencia duravel, resiliencia, seguranca, observabilidade e deploy validados | Pendente |
 
 ## Iteracao intercalada: containers de desenvolvimento
@@ -115,7 +115,21 @@ lista publica sao consistentes. Apenas depois dessa validacao o evento
 `sources` e os tokens sao enviados. Testes comprovam que `[2]` sem fonte
 correspondente termina em `error` sem vazar texto.
 
-## Proxima iteracao proposta: Etapa 11
+## Etapa 11 implementada
 
-Versionar um dataset inicial e implementar metricas reproduziveis de retrieval
-e ranking, alem de uma avaliacao de grounding/relevancia das respostas.
+Foi versionado um dataset inicial com perguntas sobre contratos reais do
+projeto e fontes esperadas. O runner calcula Recall@K, MRR, latencias e metricas
+deterministicas de relevancia lexical, grounding por chunks citados, validade
+das citacoes e cobertura das fontes esperadas. Dataset e corpus possuem hashes
+independentes, impedindo comparacoes entre revisoes diferentes.
+
+Cada relatorio registra chunking, embedding, MMR, reranker, gerador, tokens e
+precos fornecidos. O comparador apresenta deltas de qualidade, latencia e custo
+e destaca configuracoes alteradas. Um baseline offline, explicitamente separado
+dos providers de producao, permite reproduzir o gate sem Chroma ou credenciais;
+o mesmo comando avalia a collection e os modelos reais quando configurados.
+
+## Proxima iteracao proposta: Etapa 12
+
+Adicionar persistencia duravel, resiliencia, seguranca, observabilidade e
+controles de deploy sem alterar os contratos de dominio aceitos.

@@ -219,5 +219,6 @@ __marimo__/
 
 # Agentic RAG runtime data
 chroma/
+evaluation/reports/
 documents/*
 !documents/.gitkeep

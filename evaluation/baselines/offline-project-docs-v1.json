@@ -1,0 +1,474 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-24T17:03:56.063522+00:00",
+  "dataset": {
+    "name": "agentic-rag-project-docs",
+    "version": "1.0.0",
+    "sha256": "7a321594eef4880223cf11432ddafe43e3718859f390a6be53ad4f504d8161ed",
+    "corpus_sha256": "af61a955cb3d0a419bfa94838e18532e45ecb2c38afc7bda4ad3947bd5ede88b",
+    "cases": 6
+  },
+  "configuration": {
+    "name": "offline-project-docs-v1",
+    "mode": "offline",
+    "app_version": "0.1.0",
+    "chunk_size": 700,
+    "chunk_overlap": 100,
+    "embedding_model": "evaluation:hashing-384-v1",
+    "reranker_model": "evaluation:token-overlap-v1",
+    "fetch_k": 60,
+    "candidate_k": 20,
+    "final_k": 5,
+    "lambda_mult": 0.65,
+    "collection_name": null,
+    "llm_model": "evaluation:extractive-v1",
+    "llm_temperature": 0.0,
+    "pricing": null
+  },
+  "summary": {
+    "retrieval": {
+      "recall_at_k": {
+        "1": 0.833333,
+        "3": 0.833333,
+        "5": 1.0
+      },
+      "mrr": 0.866667,
+      "latency": {
+        "mean_ms": 552.83,
+        "p50_ms": 541.229,
+        "p95_ms": 656.673
+      }
+    },
+    "answers": {
+      "evaluated_cases": 6,
+      "relevance": 0.179781,
+      "grounding": 1.0,
+      "citation_validity": 1.0,
+      "expected_source_recall": 0.666667,
+      "latency": {
+        "mean_ms": 0.994,
+        "p50_ms": 0.942,
+        "p95_ms": 1.264
+      },
+      "usage": {
+        "calls": 6,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "complete": true,
+        "estimated_cost": null,
+        "currency": null
+      }
+    }
+  },
+  "cases": [
+    {
+      "id": "citation-validation",
+      "question": "O que acontece quando a resposta cita um identificador de fonte que nao existe?",
+      "retrieved": [
+        {
+          "rank": 1,
+          "chunk_id": "docs/citations.md#chunk:1",
+          "document_id": null,
+          "source": "docs/citations.md",
+          "retrieval_score": -0.8093767870842442,
+          "rerank_score": 0.1617491598051576
+        },
+        {
+          "rank": 2,
+          "chunk_id": "docs/query-rewrite.md#chunk:4",
+          "document_id": null,
+          "source": "docs/query-rewrite.md",
+          "retrieval_score": -0.8837523612561806,
+          "rerank_score": 0.11470786693528087
+        },
+        {
+          "rank": 3,
+          "chunk_id": "docs/citations.md#chunk:5",
+          "document_id": null,
+          "source": "docs/citations.md",
+          "retrieval_score": -0.8543071206464103,
+          "rerank_score": 0.11043152607484653
+        },
+        {
+          "rank": 4,
+          "chunk_id": "docs/citations.md#chunk:4",
+          "document_id": null,
+          "source": "docs/citations.md",
+          "retrieval_score": -0.8713760611431183,
+          "rerank_score": 0.09534625892455924
+        },
+        {
+          "rank": 5,
+          "chunk_id": "docs/web-fallback.md#chunk:3",
+          "document_id": null,
+          "source": "docs/web-fallback.md",
+          "retrieval_score": -0.7613328147472809,
+          "rerank_score": 0.0944911182523068
+        }
+      ],
+      "retrieval": {
+        "recall_at_k": {
+          "1": 1.0,
+          "3": 1.0,
+          "5": 1.0
+        },
+        "reciprocal_rank": 1.0,
+        "latency_ms": 584.586
+      },
+      "answer": "id e citation: identificador numerico e rotulo exibido na resposta; [1]",
+      "answer_metrics": {
+        "relevance": 0.11764705882352942,
+        "grounding": 1.0,
+        "citation_validity": 1.0,
+        "expected_source_recall": 1.0,
+        "latency_ms": 0.951,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    {
+      "id": "chroma-container",
+      "question": "Como o Chroma e executado no ambiente Docker Compose?",
+      "retrieved": [
+        {
+          "rank": 1,
+          "chunk_id": "docs/containers.md#chunk:8",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.6837722339831619,
+          "rerank_score": 0.24806946917841693
+        },
+        {
+          "rank": 2,
+          "chunk_id": "docs/containers.md#chunk:7",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.5080650449500463,
+          "rerank_score": 0.24120907566221086
+        },
+        {
+          "rank": 3,
+          "chunk_id": "docs/containers.md#chunk:9",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.6310676063136889,
+          "rerank_score": 0.19364916731037085
+        },
+        {
+          "rank": 4,
+          "chunk_id": "docs/containers.md#chunk:5",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.7015189971021453,
+          "rerank_score": 0.18973665961010278
+        },
+        {
+          "rank": 5,
+          "chunk_id": "docs/containers.md#chunk:10",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.4814639182758901,
+          "rerank_score": 0.14907119849998599
+        }
+      ],
+      "retrieval": {
+        "recall_at_k": {
+          "1": 1.0,
+          "3": 1.0,
+          "5": 1.0
+        },
+        "reciprocal_rank": 1.0,
+        "latency_ms": 663.582
+      },
+      "answer": "docker compose down -v [1]",
+      "answer_metrics": {
+        "relevance": 0.0,
+        "grounding": 1.0,
+        "citation_validity": 1.0,
+        "expected_source_recall": 1.0,
+        "latency_ms": 1.146,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    {
+      "id": "conversation-isolation",
+      "question": "Como as conversas sao isoladas e qual e a limitacao atual da memoria?",
+      "retrieved": [
+        {
+          "rank": 1,
+          "chunk_id": "docs/containers.md#chunk:2",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.8267602678311907,
+          "rerank_score": 0.09523809523809523
+        },
+        {
+          "rank": 2,
+          "chunk_id": "docs/containers.md#chunk:4",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.8848705665319995,
+          "rerank_score": 0.0944911182523068
+        },
+        {
+          "rank": 3,
+          "chunk_id": "docs/citations.md#chunk:0",
+          "document_id": null,
+          "source": "docs/citations.md",
+          "retrieval_score": -0.8242500899345012,
+          "rerank_score": 0.05698028822981897
+        },
+        {
+          "rank": 4,
+          "chunk_id": "docs/retrieval.md#chunk:1",
+          "document_id": null,
+          "source": "docs/retrieval.md",
+          "retrieval_score": -0.8989847455447789,
+          "rerank_score": 0.0563436169819011
+        },
+        {
+          "rank": 5,
+          "chunk_id": "docs/memory.md#chunk:1",
+          "document_id": null,
+          "source": "docs/memory.md",
+          "retrieval_score": -0.9541650751485894,
+          "rerank_score": 0.0563436169819011
+        }
+      ],
+      "retrieval": {
+        "recall_at_k": {
+          "1": 0.0,
+          "3": 0.0,
+          "5": 1.0
+        },
+        "reciprocal_rank": 0.2,
+        "latency_ms": 635.945
+      },
+      "answer": "imagem oficial atual contem o binario Rust, sem interpretador Python para um [1]",
+      "answer_metrics": {
+        "relevance": 0.0,
+        "grounding": 1.0,
+        "citation_validity": 1.0,
+        "expected_source_recall": 0.0,
+        "latency_ms": 1.303,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    {
+      "id": "retry-budget",
+      "question": "O que MAX_RAG_ATTEMPTS contabiliza no ciclo de consulta?",
+      "retrieved": [
+        {
+          "rank": 1,
+          "chunk_id": "docs/query-rewrite.md#chunk:0",
+          "document_id": null,
+          "source": "docs/query-rewrite.md",
+          "retrieval_score": -0.539142776414459,
+          "rerank_score": 0.300964632714423
+        },
+        {
+          "rank": 2,
+          "chunk_id": "docs/web-fallback.md#chunk:0",
+          "document_id": null,
+          "source": "docs/web-fallback.md",
+          "retrieval_score": -0.8202787113276027,
+          "rerank_score": 0.21650635094610968
+        },
+        {
+          "rank": 3,
+          "chunk_id": "docs/containers.md#chunk:6",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.6249999999999998,
+          "rerank_score": 0.21442250696755896
+        },
+        {
+          "rank": 4,
+          "chunk_id": "docs/query-rewrite.md#chunk:1",
+          "document_id": null,
+          "source": "docs/query-rewrite.md",
+          "retrieval_score": -0.7418011102528388,
+          "rerank_score": 0.21259760138109357
+        },
+        {
+          "rank": 5,
+          "chunk_id": "docs/query-rewrite.md#chunk:3",
+          "document_id": null,
+          "source": "docs/query-rewrite.md",
+          "retrieval_score": -0.7703423939126872,
+          "rerank_score": 0.1555427542095638
+        }
+      ],
+      "retrieval": {
+        "recall_at_k": {
+          "1": 1.0,
+          "3": 1.0,
+          "5": 1.0
+        },
+        "reciprocal_rank": 1.0,
+        "latency_ms": 497.872
+      },
+      "answer": "MAX_RAG_ATTEMPTS define o total de retrievals, incluindo a consulta original, [3]",
+      "answer_metrics": {
+        "relevance": 0.7272727272727274,
+        "grounding": 1.0,
+        "citation_validity": 1.0,
+        "expected_source_recall": 0.0,
+        "latency_ms": 0.789,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    {
+      "id": "retrieval-stages",
+      "question": "Quais sao as etapas executadas pelo KnowledgeRetriever antes de retornar os chunks finais?",
+      "retrieved": [
+        {
+          "rank": 1,
+          "chunk_id": "docs/retrieval.md#chunk:2",
+          "document_id": null,
+          "source": "docs/retrieval.md",
+          "retrieval_score": -0.8735088935932648,
+          "rerank_score": 0.1414213562373095
+        },
+        {
+          "rank": 2,
+          "chunk_id": "docs/citations.md#chunk:2",
+          "document_id": null,
+          "source": "docs/citations.md",
+          "retrieval_score": -0.8043015780839672,
+          "rerank_score": 0.11766968108291041
+        },
+        {
+          "rank": 3,
+          "chunk_id": "docs/citations.md#chunk:4",
+          "document_id": null,
+          "source": "docs/citations.md",
+          "retrieval_score": -0.8466070022305258,
+          "rerank_score": 0.08528028654224416
+        },
+        {
+          "rank": 4,
+          "chunk_id": "docs/containers.md#chunk:6",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.9354502775632096,
+          "rerank_score": 0.08304547985373997
+        },
+        {
+          "rank": 5,
+          "chunk_id": "docs/query-rewrite.md#chunk:3",
+          "document_id": null,
+          "source": "docs/query-rewrite.md",
+          "retrieval_score": -0.8932647899552769,
+          "rerank_score": 0.08032193289024989
+        }
+      ],
+      "retrieval": {
+        "recall_at_k": {
+          "1": 1.0,
+          "3": 1.0,
+          "5": 1.0
+        },
+        "reciprocal_rank": 1.0,
+        "latency_ms": 467.911
+      },
+      "answer": "| RAG_FINAL_K | 5 | Chunks finais depois do reranking | [1]",
+      "answer_metrics": {
+        "relevance": 0.09090909090909091,
+        "grounding": 1.0,
+        "citation_validity": 1.0,
+        "expected_source_recall": 1.0,
+        "latency_ms": 0.932,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    },
+    {
+      "id": "web-fallback-gates",
+      "question": "Em quais condicoes a busca web pode gerar uma resposta final?",
+      "retrieved": [
+        {
+          "rank": 1,
+          "chunk_id": "docs/web-fallback.md#chunk:1",
+          "document_id": null,
+          "source": "docs/web-fallback.md",
+          "retrieval_score": -0.7388835160664532,
+          "rerank_score": 0.1636634176769943
+        },
+        {
+          "rank": 2,
+          "chunk_id": "docs/query-rewrite.md#chunk:4",
+          "document_id": null,
+          "source": "docs/query-rewrite.md",
+          "retrieval_score": -0.9418761806280903,
+          "rerank_score": 0.11470786693528087
+        },
+        {
+          "rank": 3,
+          "chunk_id": "docs/citations.md#chunk:1",
+          "document_id": null,
+          "source": "docs/citations.md",
+          "retrieval_score": -0.8856260722505465,
+          "rerank_score": 0.10783277320343841
+        },
+        {
+          "rank": 4,
+          "chunk_id": "docs/citations.md#chunk:4",
+          "document_id": null,
+          "source": "docs/citations.md",
+          "retrieval_score": -0.8713760611431183,
+          "rerank_score": 0.09534625892455924
+        },
+        {
+          "rank": 5,
+          "chunk_id": "docs/web-fallback.md#chunk:3",
+          "document_id": null,
+          "source": "docs/web-fallback.md",
+          "retrieval_score": -0.8806664073736404,
+          "rerank_score": 0.0944911182523068
+        }
+      ],
+      "retrieval": {
+        "recall_at_k": {
+          "1": 1.0,
+          "3": 1.0,
+          "5": 1.0
+        },
+        "reciprocal_rank": 1.0,
+        "latency_ms": 467.084
+      },
+      "answer": "a unica responsavel por acionar web, e existe no maximo uma busca externa por [1]",
+      "answer_metrics": {
+        "relevance": 0.14285714285714288,
+        "grounding": 1.0,
+        "citation_validity": 1.0,
+        "expected_source_recall": 1.0,
+        "latency_ms": 0.843,
+        "usage": {
+          "input_tokens": 0,
+          "output_tokens": 0,
+          "total_tokens": 0
+        }
+      }
+    }
+  ]
+}

@@ -45,6 +45,11 @@ Etapa 10 (citacoes e proveniencia): implementada. Evidencias RAG e web sao
 normalizadas em fontes publicas numeradas; toda resposta grounded precisa citar
 IDs existentes, e o SSE envia somente as fontes efetivamente utilizadas.
 
+Etapa 11 (avaliacao reproduzivel): implementada. Um dataset e corpus
+versionados alimentam Recall@K, MRR e metricas deterministicas de relevancia,
+grounding e citacoes; relatorios registram configuracao, latencia, tokens e
+custo para comparacoes controladas.
+
 ## Requisitos
 
 - Python 3.11 ou superior
@@ -141,6 +146,23 @@ pytest
 
 O plano de entregas e os gates entre iteracoes estao em
 [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md).
+
+## Executar a avaliacao
+
+O baseline local nao exige Chroma, modelos baixados ou credenciais:
+
+```bash
+agentic-rag-evaluate evaluation/datasets/project-docs-v1.json \
+  --offline \
+  --name offline-project-docs-v1 \
+  --output evaluation/baselines/offline-project-docs-v1.json
+```
+
+Para avaliar os modelos e a collection configurados, remova `--offline`. Use
+`--retrieval-only` quando nao quiser chamar o LLM e `--baseline CAMINHO` para
+obter os deltas contra um relatorio anterior. O contrato das metricas, o fluxo
+de ingestao do corpus e os limites do baseline estao em
+[`docs/evaluation.md`](docs/evaluation.md).
 
 ## Ingerir conhecimento
 

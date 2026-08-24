@@ -13,6 +13,7 @@ from app.websearch.models import WebSearchResult
 @dataclass
 class FakeResponse:
     content: object
+    usage_metadata: dict[str, int] | None = None
 
 
 class RecordingChatModel:
@@ -81,6 +82,32 @@ def test_text_content_blocks_are_supported() -> None:
         [document],
         normalize_rag_sources([document]),
     ) == "Resposta em bloco [1]."
+
+
+def test_generation_metadata_preserves_provider_token_usage() -> None:
+    model = RecordingChatModel()
+    model.response = "Resposta medida [1]."
+    document = make_document()
+    generator = LangChainAnswerGenerator(model)
+    model.invoke = lambda input: FakeResponse(
+        content="Resposta medida [1].",
+        usage_metadata={
+            "input_tokens": 20,
+            "output_tokens": 5,
+            "total_tokens": 25,
+        },
+    )
+
+    generation = generator.generate_with_metadata(
+        "Pergunta",
+        [document],
+        normalize_rag_sources([document]),
+    )
+
+    assert generation.answer == "Resposta medida [1]."
+    assert generation.input_tokens == 20
+    assert generation.output_tokens == 5
+    assert generation.total_tokens == 25
 
 
 def test_web_result_url_is_preserved_in_grounding_context() -> None:

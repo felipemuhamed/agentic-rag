@@ -76,7 +76,7 @@ da verificacao de referencias.
 ## Limites
 
 A etapa garante que toda citacao exibida aponta para uma fonte existente. Ela
-nao mede automaticamente a qualidade semantica da atribuicao; graders e prompt
-continuam responsaveis pelo grounding. A Etapa 11 adicionara avaliacao
-reproduzivel, e controles de acesso a documentos/fontes pertencem ao hardening
-da Etapa 12.
+nao prova automaticamente a qualidade semantica da atribuicao; graders e prompt
+continuam responsaveis pelo grounding. A Etapa 11 adicionou proxies
+reproduziveis e revisao por caso; controles de acesso a documentos/fontes
+pertencem ao hardening da Etapa 12.
