@@ -9,6 +9,8 @@ from app.llm.query_preparer import QueryPreparer
 from app.llm.query_rewriter import QueryRewriter
 from app.llm.rag_grader import RagGrader
 from app.llm.web_grader import WebGrader
+from app.sources.citations import select_cited_sources
+from app.sources.normalizer import normalize_rag_sources, normalize_web_sources
 from app.websearch.base import WebSearchProvider
 
 
@@ -57,6 +59,7 @@ class RagNodes:
             "retrieval_attempts": 0,
             "web_results": [],
             "web_relevant": False,
+            "sources": [],
         }
 
     def retrieve_rag(self, state: RagState) -> dict[str, object]:
@@ -118,18 +121,24 @@ class RagNodes:
 
     def generate_answer(self, state: RagState) -> dict[str, object]:
         from_web = state.get("web_relevant") is True
-        documents = (
-            state.get("web_results", [])
-            if from_web
-            else state.get("documents", [])
-        )
+        if from_web:
+            documents = state.get("web_results", [])
+            sources = normalize_web_sources(documents)
+        else:
+            documents = state.get("documents", [])
+            sources = normalize_rag_sources(documents)
+        if not documents:
+            raise RuntimeError("answer generation requires approved evidence")
         answer = self._answer_generator.generate(
             state["prepared_query"],
             documents,
+            sources,
         )
+        cited_sources = select_cited_sources(answer, sources)
         return {
             "answer": answer,
             "source": "web" if from_web else "rag",
+            "sources": [source.to_public() for source in cited_sources],
             "messages": [
                 HumanMessage(content=state["question"]),
                 AIMessage(content=answer),
@@ -140,6 +149,7 @@ class RagNodes:
         return {
             "answer": NO_CONTEXT_ANSWER,
             "source": "none",
+            "sources": [],
             "messages": [
                 HumanMessage(content=state["question"]),
                 AIMessage(content=NO_CONTEXT_ANSWER),

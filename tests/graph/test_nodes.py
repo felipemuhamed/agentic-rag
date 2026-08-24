@@ -7,6 +7,7 @@ from app.knowledge.retrieval.models import (
 from app.llm.answer_generator import NO_CONTEXT_ANSWER
 from app.llm.rag_grader import RagGrade
 from app.llm.web_grader import WebGrade
+from app.sources.models import Source
 from app.websearch.models import WebSearchResult
 
 
@@ -50,15 +51,18 @@ class StubRetriever:
 
 class StubAnswerGenerator:
     def __init__(self):
-        self.calls: list[tuple[str, list[RetrievedDocument]]] = []
+        self.calls: list[
+            tuple[str, list[RetrievedDocument], list[Source]]
+        ] = []
 
     def generate(
         self,
         question: str,
         documents: list[RetrievedDocument],
+        sources: list[Source],
     ) -> str:
-        self.calls.append((question, documents))
-        return "Resposta grounded."
+        self.calls.append((question, documents, sources))
+        return "Resposta grounded [1]."
 
 
 class StubGrader:
@@ -185,6 +189,7 @@ def test_nodes_are_independently_callable() -> None:
         "retrieval_attempts": 0,
         "web_results": [],
         "web_relevant": False,
+        "sources": [],
     }
     assert preparer.calls == [("Como funciona?", [])]
     assert retriever.queries == ["Como funciona?"]
@@ -199,12 +204,29 @@ def test_nodes_are_independently_callable() -> None:
     assert nodes.route_after_grade(
         {**graded, "retrieval_attempts": 1}
     ) == "answer"
-    assert generator.calls == [("Como funciona?", [document])]
-    assert answered["answer"] == "Resposta grounded."
+    assert len(generator.calls) == 1
+    generated_question, generated_documents, generated_sources = generator.calls[0]
+    assert generated_question == "Como funciona?"
+    assert generated_documents == [document]
+    assert [source.citation for source in generated_sources] == ["[1]"]
+    assert answered["answer"] == "Resposta grounded [1]."
     assert answered["source"] == "rag"
+    assert answered["sources"] == [
+        {
+            "id": 1,
+            "citation": "[1]",
+            "type": "rag",
+            "title": "guia",
+            "source": "guia.md",
+            "chunkId": "chunk-1",
+            "url": None,
+            "page": None,
+            "section": None,
+        }
+    ]
     assert [message.content for message in answered["messages"]] == [
         "Como funciona?",
-        "Resposta grounded.",
+        "Resposta grounded [1].",
     ]
 
 
@@ -285,6 +307,7 @@ def test_irrelevant_rag_routes_through_web_before_no_answer() -> None:
     assert web_route == "no_answer"
     assert result["answer"] == NO_CONTEXT_ANSWER
     assert result["source"] == "none"
+    assert result["sources"] == []
     assert [message.content for message in result["messages"]] == [
         "Pergunta original",
         NO_CONTEXT_ANSWER,

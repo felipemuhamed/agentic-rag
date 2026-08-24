@@ -93,9 +93,11 @@ request do adapter:
 pytest tests/websearch tests/graph/test_web_grader.py tests/graph/test_graph.py
 ```
 
-## Limites desta etapa
+## Integracao com citacoes
 
-O evento SSE `sources` ainda retorna uma lista vazia. A Etapa 10 definira o
-modelo publico normalizado, IDs `[1]`, correspondencia entre resposta e fontes
-e politica de exibicao no frontend. Retry HTTP, circuit breaker, allowlist de
-dominios e observabilidade operacional ficam para o hardening de producao.
+Desde a Etapa 10, resultados web aprovados sao convertidos em fontes publicas.
+Cada citacao mapeia diretamente para a URL original, e somente URLs citadas sao
+enviadas no evento SSE `sources`. Consulte [`citations.md`](citations.md).
+
+Retry HTTP, circuit breaker, allowlist de dominios e observabilidade operacional
+continuam reservados ao hardening de producao.

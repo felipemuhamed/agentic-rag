@@ -1,9 +1,10 @@
 import logging
+import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
-from typing import Any, Protocol
+from typing import Protocol
 
-from langchain_core.messages import AIMessage, BaseMessage
-
+from app.sources.citations import citation_ids, select_cited_sources
+from app.sources.models import PublicSource, Source
 from app.streaming.events import StreamEvent
 
 
@@ -14,6 +15,7 @@ QUERY_REWRITE_MESSAGE = "Reformulando a busca..."
 WEB_SEARCH_MESSAGE = "Buscando fontes externas..."
 GENERATING_MESSAGE = "Gerando a resposta..."
 PUBLIC_ERROR_MESSAGE = "Não foi possível concluir a resposta."
+ANSWER_CHUNK_PATTERN = re.compile(r"\S+\s*")
 
 
 class StreamableRagGraph(Protocol):
@@ -47,9 +49,7 @@ class LangGraphStreamAdapter:
         yield _status("rag_search", RAG_SEARCH_MESSAGE)
 
         retrieval_attempts = 0
-        final_result: tuple[str, str] | None = None
-        emitted_token = False
-        emitted_sources = False
+        final_result: tuple[str, str, list[PublicSource]] | None = None
         last_status = "rag_search"
 
         try:
@@ -57,7 +57,7 @@ class LangGraphStreamAdapter:
             internal_stream = graph.stream(
                 {"question": message},
                 config={"configurable": {"thread_id": conversation_id}},
-                stream_mode=["updates", "messages"],
+                stream_mode=["updates"],
             )
             for mode, data in internal_stream:
                 if mode == "updates" and isinstance(data, Mapping):
@@ -97,37 +97,15 @@ class LangGraphStreamAdapter:
                         elif node_name in {"generate_answer", "no_answer"}:
                             final_result = _terminal_result(update)
 
-                elif mode == "messages":
-                    message_chunk, metadata = _message_event(data)
-                    if metadata.get("langgraph_node") != "generate_answer":
-                        continue
-                    if isinstance(message_chunk, BaseMessage) and not isinstance(
-                        message_chunk,
-                        AIMessage,
-                    ):
-                        continue
-                    text = _message_text(message_chunk)
-                    if not text:
-                        continue
-                    if last_status != "generating":
-                        yield _status("generating", GENERATING_MESSAGE)
-                        last_status = "generating"
-                    if not emitted_sources:
-                        yield StreamEvent("sources", {"sources": []})
-                        emitted_sources = True
-                    yield StreamEvent("token", {"text": text})
-                    emitted_token = True
-
             if final_result is None:
                 raise RuntimeError("graph stream ended without a terminal result")
 
-            answer, _source = final_result
-            if not emitted_token:
-                if last_status != "generating":
-                    yield _status("generating", GENERATING_MESSAGE)
-                if not emitted_sources:
-                    yield StreamEvent("sources", {"sources": []})
-                yield StreamEvent("token", {"text": answer})
+            answer, _source, sources = final_result
+            if last_status != "generating":
+                yield _status("generating", GENERATING_MESSAGE)
+            yield StreamEvent("sources", {"sources": sources})
+            for token in ANSWER_CHUNK_PATTERN.findall(answer):
+                yield StreamEvent("token", {"text": token})
 
             yield StreamEvent("done", {})
         except Exception as error:
@@ -151,40 +129,37 @@ def _status(stage: str, message: str) -> StreamEvent:
     )
 
 
-def _message_event(data: object) -> tuple[object, Mapping[str, Any]]:
-    if not isinstance(data, tuple) or len(data) != 2:
-        return data, {}
-    message, metadata = data
-    if not isinstance(metadata, Mapping):
-        return message, {}
-    return message, metadata
-
-
-def _message_text(message: object) -> str:
-    content = (
-        message
-        if isinstance(message, str)
-        else getattr(message, "content", None)
-    )
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-
-    text_blocks: list[str] = []
-    for block in content:
-        if isinstance(block, str):
-            text_blocks.append(block)
-        elif isinstance(block, Mapping) and isinstance(block.get("text"), str):
-            text_blocks.append(block["text"])
-    return "".join(text_blocks)
-
-
-def _terminal_result(update: Mapping[str, object]) -> tuple[str, str]:
+def _terminal_result(
+    update: Mapping[str, object],
+) -> tuple[str, str, list[PublicSource]]:
     answer = update.get("answer")
     source = update.get("source")
-    if not isinstance(answer, str) or not answer:
+    raw_sources = update.get("sources")
+    if not isinstance(answer, str) or not answer.strip():
         raise RuntimeError("terminal graph update does not contain an answer")
     if not isinstance(source, str) or source not in {"rag", "web", "none"}:
         raise RuntimeError("terminal graph update contains an invalid source")
-    return answer, source
+    if not isinstance(raw_sources, list):
+        raise RuntimeError("terminal graph update does not contain sources")
+
+    try:
+        normalized_sources = [
+            Source.from_public(raw_source) for raw_source in raw_sources
+        ]
+        source_ids = [item.citation_id for item in normalized_sources]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("source IDs must be unique")
+        cited_sources = select_cited_sources(answer, normalized_sources)
+        if {item.citation_id for item in cited_sources} != set(source_ids):
+            raise ValueError("terminal sources include uncited entries")
+        if source == "none":
+            if normalized_sources or citation_ids(answer):
+                raise ValueError("no-answer result must not contain citations")
+        elif not normalized_sources:
+            raise ValueError("grounded answer must contain sources")
+        elif any(item.source_type != source for item in normalized_sources):
+            raise ValueError("terminal source type does not match answer source")
+    except ValueError as error:
+        raise RuntimeError("terminal sources are inconsistent") from error
+
+    return answer.strip(), source, [item.to_public() for item in normalized_sources]

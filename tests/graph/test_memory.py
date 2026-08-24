@@ -10,6 +10,7 @@ from app.knowledge.retrieval.models import (
     RetrievedDocument,
 )
 from app.llm.rag_grader import RagGrade
+from app.sources.models import Source
 
 
 class ContextAwareQueryPreparer:
@@ -81,8 +82,9 @@ class QueryEchoAnswerGenerator:
         self,
         question: str,
         documents: list[RetrievedDocument],
+        sources: list[Source],
     ) -> str:
-        return f"Resposta para: {question}"
+        return f"Resposta para: {question} [1]"
 
 
 def test_follow_up_uses_only_its_thread_history() -> None:
@@ -107,12 +109,26 @@ def test_follow_up_uses_only_its_thread_history() -> None:
     isolated = graph.invoke({"question": "E no Keycloak?"}, config=thread_b)
 
     assert follow_up == {
-        "answer": "Resposta para: Como configurar OAuth no Keycloak?",
+        "answer": "Resposta para: Como configurar OAuth no Keycloak? [1]",
         "source": "rag",
+        "sources": [
+            {
+                "id": 1,
+                "citation": "[1]",
+                "type": "rag",
+                "title": "oauth",
+                "source": "oauth.md",
+                "chunkId": "oauth-1",
+                "url": None,
+                "page": None,
+                "section": None,
+            }
+        ],
     }
     assert isolated == {
-        "answer": "Resposta para: E no Keycloak?",
+        "answer": "Resposta para: E no Keycloak? [1]",
         "source": "rag",
+        "sources": follow_up["sources"],
     }
     assert retriever.queries == [
         "Como configurar OAuth?",
@@ -125,7 +141,7 @@ def test_follow_up_uses_only_its_thread_history() -> None:
             "E no Keycloak?",
             [
                 "Como configurar OAuth?",
-                "Resposta para: Como configurar OAuth?",
+                "Resposta para: Como configurar OAuth? [1]",
             ],
         ),
         ("E no Keycloak?", []),
@@ -135,11 +151,11 @@ def test_follow_up_uses_only_its_thread_history() -> None:
     messages_b = graph.get_state(thread_b).values["messages"]
     assert [message.content for message in messages_a] == [
         "Como configurar OAuth?",
-        "Resposta para: Como configurar OAuth?",
+        "Resposta para: Como configurar OAuth? [1]",
         "E no Keycloak?",
-        "Resposta para: Como configurar OAuth no Keycloak?",
+        "Resposta para: Como configurar OAuth no Keycloak? [1]",
     ]
     assert [message.content for message in messages_b] == [
         "E no Keycloak?",
-        "Resposta para: E no Keycloak?",
+        "Resposta para: E no Keycloak? [1]",
     ]

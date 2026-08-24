@@ -7,6 +7,7 @@ from app.knowledge.retrieval.models import (
 from app.llm.answer_generator import LangChainAnswerGenerator, NO_CONTEXT_ANSWER
 from app.llm.rag_grader import RagGrade
 from app.llm.web_grader import WebGrade
+from app.sources.models import Source
 from app.websearch.models import WebSearchResult
 
 
@@ -37,6 +38,7 @@ class RecordingAnswerGenerator:
         self,
         question: str,
         documents: list[object],
+        sources: list[Source],
     ) -> str:
         identifier = getattr(
             documents[0],
@@ -44,7 +46,7 @@ class RecordingAnswerGenerator:
             getattr(documents[0], "url", "unknown"),
         )
         self.events.append(f"answer:{question}:{identifier}")
-        return "Use o refresh token descrito no guia."
+        return "Use o refresh token descrito no guia [1]."
 
 
 class RecordingGrader:
@@ -157,8 +159,21 @@ def test_linear_graph_answers_from_retrieved_documents() -> None:
     result = graph.invoke({"question": "  Como renovar o token?  "})
 
     assert result == {
-        "answer": "Use o refresh token descrito no guia.",
+        "answer": "Use o refresh token descrito no guia [1].",
         "source": "rag",
+        "sources": [
+            {
+                "id": 1,
+                "citation": "[1]",
+                "type": "rag",
+                "title": "oauth",
+                "source": "oauth.md",
+                "chunkId": "oauth-1",
+                "url": None,
+                "page": None,
+                "section": None,
+            }
+        ],
     }
     assert events == [
         "retrieve:Como renovar o token?",
@@ -204,7 +219,11 @@ def test_linear_graph_fails_closed_when_retrieval_is_empty() -> None:
 
     result = graph.invoke({"question": "Pergunta sem cobertura"})
 
-    assert result == {"answer": NO_CONTEXT_ANSWER, "source": "none"}
+    assert result == {
+        "answer": NO_CONTEXT_ANSWER,
+        "source": "none",
+        "sources": [],
+    }
     assert events == [
         "retrieve:Pergunta sem cobertura",
         "grade:Pergunta sem cobertura:",
@@ -235,7 +254,11 @@ def test_irrelevant_documents_do_not_reach_answer_generator() -> None:
 
     result = graph.invoke({"question": "Qual é a política de retenção?"})
 
-    assert result == {"answer": NO_CONTEXT_ANSWER, "source": "none"}
+    assert result == {
+        "answer": NO_CONTEXT_ANSWER,
+        "source": "none",
+        "sources": [],
+    }
     assert events == [
         "retrieve:Qual é a política de retenção?",
         "grade:Qual é a política de retenção?:unrelated-1",
@@ -327,8 +350,21 @@ def test_graph_answers_after_one_rewrite() -> None:
     result = graph.invoke({"question": "Como renovar o token?"})
 
     assert result == {
-        "answer": "Use o refresh token descrito no guia.",
+        "answer": "Use o refresh token descrito no guia [1].",
         "source": "rag",
+        "sources": [
+            {
+                "id": 1,
+                "citation": "[1]",
+                "type": "rag",
+                "title": "oauth",
+                "source": "oauth.md",
+                "chunkId": "oauth-1",
+                "url": None,
+                "page": None,
+                "section": None,
+            }
+        ],
     }
     assert events == [
         "retrieve:Como renovar o token?",
@@ -358,7 +394,11 @@ def test_graph_stops_exactly_at_configured_attempt_limit() -> None:
 
     result = graph.invoke({"question": "Pergunta sem cobertura"})
 
-    assert result == {"answer": NO_CONTEXT_ANSWER, "source": "none"}
+    assert result == {
+        "answer": NO_CONTEXT_ANSWER,
+        "source": "none",
+        "sources": [],
+    }
     assert events == [
         "retrieve:Pergunta sem cobertura",
         "grade:Pergunta sem cobertura:",
@@ -396,8 +436,23 @@ def test_graph_answers_from_web_only_after_rag_is_exhausted() -> None:
     result = graph.invoke({"question": "Como configurar OAuth no Keycloak?"})
 
     assert result == {
-        "answer": "Use o refresh token descrito no guia.",
+        "answer": "Use o refresh token descrito no guia [1].",
         "source": "web",
+        "sources": [
+            {
+                "id": 1,
+                "citation": "[1]",
+                "type": "web",
+                "title": "Keycloak OAuth documentation",
+                "source": (
+                    "https://www.keycloak.org/docs/latest/securing_apps/"
+                ),
+                "chunkId": None,
+                "url": "https://www.keycloak.org/docs/latest/securing_apps/",
+                "page": None,
+                "section": None,
+            }
+        ],
     }
     assert web_result.metadata == {
         "source": "https://www.keycloak.org/docs/latest/securing_apps/",

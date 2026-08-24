@@ -17,7 +17,7 @@ seguinte nao deve ser implementada antes disso.
 | 7 | SSE em `POST /chat/stream` com adapter publico | Status precede tokens; somente resposta final e transmitida; termina em `done` ou `error` | Implementada; contrato HTTP e filtragem de eventos cobertos por testes |
 | 8 | Threads e memoria por `conversationId` | Follow-up vira consulta independente e conversas ficam isoladas | Implementada; criterios cobertos por testes com checkpointer real |
 | 9 | Fallback web por interface substituivel | Web so executa apos falha interna; evidencia insuficiente resulta em `no_answer` | Implementada; ambos os gates e metadata de URL cobertos por testes |
-| 10 | Citacoes e proveniencia normalizadas | Toda citacao resolve para uma fonte real com metadata preservada | Pendente |
+| 10 | Citacoes e proveniencia normalizadas | Toda citacao resolve para uma fonte real com metadata preservada | Implementada; validacao fechada e contrato SSE cobertos por testes |
 | 11 | Dataset e avaliacao reproduzivel | Baseline versionado com Recall@K e MRR ou nDCG, alem de grounding | Pendente |
 | 12 | Hardening de producao | Persistencia duravel, resiliencia, seguranca, observabilidade e deploy validados | Pendente |
 
@@ -72,8 +72,9 @@ Foi criado `POST /chat/stream` com request `conversationId`/`message` e um
 adapter separado que converte `updates` e `messages` do LangGraph em eventos
 SSE publicos. O stream inicia com `status`, emite `sources` antes dos tokens,
 filtra mensagens para aceitar apenas `generate_answer` e termina com `done` ou
-um `error` sem detalhes internos. Ate a Etapa 10, `sources` e uma lista vazia.
-Na Etapa 8, `conversationId` passou a ser usado como thread.
+um `error` sem detalhes internos. Na Etapa 10, `sources` passou a carregar apenas
+fontes citadas e validadas. Na Etapa 8, `conversationId` passou a ser usado como
+thread.
 
 ## Etapa 8 implementada
 
@@ -94,14 +95,27 @@ Foi criado `WebSearchProvider`, com adapter Tavily configuravel e sem referencia
 ao provider dentro dos nodes. Um grade RAG negativo no limite segue para
 `search_web -> grade_web`; apenas `web_relevant=true` libera o gerador com
 `source=web`. Resultado vazio ou insuficiente termina em `no_answer`. Os
-resultados preservam titulo, URL, score e provider, mas ainda nao existe o
-contrato publico de citacoes da etapa seguinte.
+resultados preservam titulo, URL, score e provider. A Etapa 10 acrescentou o
+contrato publico de citacoes sobre essa metadata.
 
 Testes comprovam que o provider nao e chamado quando o RAG e suficiente, que a
 ultima consulta interna alimenta o fallback, que URLs permanecem na metadata e
 que evidencia web reprovada nunca chega ao gerador.
 
-## Proxima iteracao proposta: Etapa 10
+## Etapa 10 implementada
 
-Normalizar fontes RAG e web, atribuir IDs de citacao verificaveis e preencher o
-evento SSE `sources` sem expor modelos internos do grafo.
+Foi criado um modelo `Source` unico para RAG e web. Fontes internas preservam o
+`chunkId` e metadata de titulo, pagina, secao e URL quando disponivel; fontes
+externas preservam a URL original. A evidencia recebe IDs deterministas antes
+da geracao, e o prompt permite apenas os rotulos fornecidos.
+
+A resposta terminal e validada duas vezes: o node rejeita ausencia de citacao
+ou IDs desconhecidos, e o adapter SSE confirma que resposta, tipo agregado e
+lista publica sao consistentes. Apenas depois dessa validacao o evento
+`sources` e os tokens sao enviados. Testes comprovam que `[2]` sem fonte
+correspondente termina em `error` sem vazar texto.
+
+## Proxima iteracao proposta: Etapa 11
+
+Versionar um dataset inicial e implementar metricas reproduziveis de retrieval
+e ranking, alem de uma avaliacao de grounding/relevancia das respostas.

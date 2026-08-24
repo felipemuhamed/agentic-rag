@@ -42,11 +42,13 @@ E emitido uma vez antes do primeiro token:
 
 ```text
 event: sources
-data: {"sources":[]}
+data: {"sources":[{"id":1,"citation":"[1]","type":"rag","title":"Guia OAuth","source":"oauth.md","chunkId":"oauth-1","url":null,"page":3,"section":"Tokens"}]}
 ```
 
-A lista permanece vazia ate a normalizacao de fontes e citacoes da Etapa 10.
-Metadata interna de chunks nao e exposta como contrato temporario.
+A lista contem somente fontes citadas na resposta terminal. Para RAG, cada item
+mapeia para um `chunkId`; para web, mapeia para uma URL. Campos indisponiveis
+sao enviados como `null`, mantendo um contrato estavel. Consulte
+[`citations.md`](citations.md).
 
 ### `token`
 
@@ -57,11 +59,11 @@ event: token
 data: {"text":"Resposta"}
 ```
 
-O adapter aceita mensagens de assistente somente quando `langgraph_node` e
-`generate_answer`. A mensagem humana registrada no estado e tokens de grading
-RAG/web, structured output ou query rewrite sao descartados. Quando o runtime nao
-produz chunks incrementais, o adapter envia a resposta terminal inteira como um
-unico token de fallback.
+O adapter nao encaminha diretamente nenhum token do runtime interno. Grading,
+rewrite e a geracao permanecem privados ate a resposta terminal passar pela
+validacao de citacoes. Depois disso, o adapter emite `sources` e fragmenta a
+resposta validada em eventos `token`. Assim, uma referencia inexistente produz
+`error` antes que qualquer fonte ou texto final seja exibido.
 
 ### `done`
 

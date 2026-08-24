@@ -18,8 +18,25 @@ class RecordingAdapter:
             "status",
             {"stage": "rag_search", "message": "Buscando..."},
         )
-        yield StreamEvent("sources", {"sources": []})
-        yield StreamEvent("token", {"text": "Resposta"})
+        yield StreamEvent(
+            "sources",
+            {
+                "sources": [
+                    {
+                        "id": 1,
+                        "citation": "[1]",
+                        "type": "rag",
+                        "title": "Guia OAuth",
+                        "source": "oauth.md",
+                        "chunkId": "oauth-1",
+                        "url": None,
+                        "page": 3,
+                        "section": "Tokens",
+                    }
+                ]
+            },
+        )
+        yield StreamEvent("token", {"text": "Resposta [1]."})
         yield StreamEvent("done", {})
 
 
@@ -61,8 +78,25 @@ def test_chat_stream_exposes_stable_sse_contract() -> None:
     assert adapter.calls == [("conversation-1", "Como renovar o token?")]
     assert parse_sse(response.text) == [
         ("status", {"stage": "rag_search", "message": "Buscando..."}),
-        ("sources", {"sources": []}),
-        ("token", {"text": "Resposta"}),
+        (
+            "sources",
+            {
+                "sources": [
+                    {
+                        "id": 1,
+                        "citation": "[1]",
+                        "type": "rag",
+                        "title": "Guia OAuth",
+                        "source": "oauth.md",
+                        "chunkId": "oauth-1",
+                        "url": None,
+                        "page": 3,
+                        "section": "Tokens",
+                    }
+                ]
+            },
+        ),
+        ("token", {"text": "Resposta [1]."}),
         ("done", {}),
     ]
 

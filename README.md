@@ -41,6 +41,10 @@ Etapa 9 (fallback web): implementada. Depois de esgotar o RAG interno, o grafo
 consulta um `WebSearchProvider` substituivel, avalia a evidencia externa com um
 grader proprio e so entao responde com `source=web` ou termina em `no_answer`.
 
+Etapa 10 (citacoes e proveniencia): implementada. Evidencias RAG e web sao
+normalizadas em fontes publicas numeradas; toda resposta grounded precisa citar
+IDs existentes, e o SSE envia somente as fontes efetivamente utilizadas.
+
 ## Requisitos
 
 - Python 3.11 ou superior
@@ -219,10 +223,12 @@ modelo de resposta quando o grader considera a evidencia suficiente. Caso
 contrario, pode reescrever a consulta e tentar novamente dentro do limite
 configurado. Se o RAG continuar insuficiente, executa busca web e avalia os
 resultados antes de responder. A saida publica continua contendo `answer` e
-`source`, agora com valores `rag`, `web` ou `none`. Os contratos estao
-detalhados em [`docs/basic-rag.md`](docs/basic-rag.md),
+`source`, agora com valores `rag`, `web` ou `none`, e passa a incluir `sources`
+com a proveniencia citada. Os contratos estao detalhados em
+[`docs/basic-rag.md`](docs/basic-rag.md),
 [`docs/rag-grader.md`](docs/rag-grader.md) e
 [`docs/query-rewrite.md`](docs/query-rewrite.md). O protocolo HTTP/SSE esta em
 [`docs/streaming.md`](docs/streaming.md) e a memoria conversacional em
 [`docs/memory.md`](docs/memory.md). O fallback externo esta em
-[`docs/web-fallback.md`](docs/web-fallback.md).
+[`docs/web-fallback.md`](docs/web-fallback.md) e o contrato de proveniencia em
+[`docs/citations.md`](docs/citations.md).

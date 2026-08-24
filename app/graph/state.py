@@ -7,6 +7,7 @@ from app.knowledge.retrieval.models import (
     RetrievalDiagnostics,
     RetrievedDocument,
 )
+from app.sources.models import PublicSource
 from app.websearch.models import WebSearchResult
 
 
@@ -17,6 +18,7 @@ class RagInput(TypedDict):
 class RagOutput(TypedDict):
     answer: str
     source: Literal["rag", "web", "none"]
+    sources: list[PublicSource]
 
 
 class RagState(TypedDict):
@@ -36,3 +38,4 @@ class RagState(TypedDict):
     web_reason: NotRequired[str]
     answer: NotRequired[str]
     source: NotRequired[Literal["rag", "web", "none"]]
+    sources: NotRequired[list[PublicSource]]

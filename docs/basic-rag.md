@@ -19,11 +19,12 @@ START -> prepare_query -> retrieve_rag -> grade_rag
 ## Estado e contratos
 
 A entrada do grafo contem somente `question`; a saida contem `answer` e
-`source`, cujo valor e `rag`, `web` ou `none`. O estado interno adiciona `messages`,
-`prepared_query`, `search_query`, `retrieval_attempts`, documentos recuperados,
-diagnosticos do retrieval e a decisao do grader (`rag_relevant`,
-`rag_confidence` e `rag_reason`). O ramo externo acrescenta `web_results`,
-`web_relevant`, `web_confidence` e `web_reason`.
+`source`, cujo valor e `rag`, `web` ou `none`, e `sources`, a lista publica de
+proveniencia. O estado interno adiciona `messages`, `prepared_query`,
+`search_query`, `retrieval_attempts`, documentos recuperados, diagnosticos do
+retrieval e a decisao do grader (`rag_relevant`, `rag_confidence` e
+`rag_reason`). O ramo externo acrescenta `web_results`, `web_relevant`,
+`web_confidence` e `web_reason`.
 
 Os nodes recebem dependencias por interface:
 
@@ -41,9 +42,10 @@ teste.
 ## Grounding
 
 `generate_answer` envia ao modelo apenas a consulta preparada e a evidencia
-aprovada. Chunks internos preservam `chunk_id` e metadata; resultados externos
-preservam titulo, URL, score e provider. A instrucao de sistema proibe
-suposicoes e obediencia a instrucoes presentes dentro do conteudo recuperado.
+aprovada, ja associada aos rotulos permitidos `[1]`, `[2]` etc. Chunks internos
+preservam `chunk_id` e metadata; resultados externos preservam titulo, URL,
+score e provider. A instrucao de sistema proibe suposicoes, novas referencias e
+obediencia a instrucoes presentes dentro do conteudo recuperado.
 
 Quando nenhum documento e recuperado, o grader produz uma decisao negativa sem
 chamar seu modelo. A rota pode então reescrever a consulta se ainda houver
@@ -85,6 +87,6 @@ rewriter nem gerador. Consulte [`memory.md`](memory.md).
 
 ## Limites atuais
 
-O fluxo ainda nao possui persistencia conversacional duravel nem citacoes
-normalizadas. O evento `sources` permanece vazio ate a Etapa 10. O streaming
-fica em um adapter externo ao grafo.
+O fluxo ainda nao possui persistencia conversacional duravel. A avaliacao
+reproduzivel pertence a Etapa 11 e o hardening operacional a Etapa 12. O
+streaming fica em um adapter externo ao grafo.

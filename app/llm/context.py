@@ -3,6 +3,7 @@ from collections.abc import Mapping, Sequence
 from typing import Protocol
 
 from app.knowledge.retrieval.models import RetrievedDocument
+from app.sources.models import Source
 
 
 class GroundingDocument(Protocol):
@@ -14,13 +15,20 @@ class GroundingDocument(Protocol):
 
 def serialize_grounding_documents(
     documents: Sequence[GroundingDocument],
+    sources: Sequence[Source] | None = None,
 ) -> str:
+    if sources is not None and len(documents) != len(sources):
+        raise ValueError("documents and sources must have the same length")
+
     serialized = []
-    for document in documents:
+    for index, document in enumerate(documents):
         item: dict[str, object] = {
             "content": document.content,
             "metadata": dict(document.metadata),
         }
+        if sources is not None:
+            item["citation_id"] = sources[index].citation_id
+            item["citation"] = sources[index].citation
         for field_name in ("chunk_id", "title", "url", "score"):
             field_value = getattr(document, field_name, None)
             if field_value is not None:

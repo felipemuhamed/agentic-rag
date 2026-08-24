@@ -8,6 +8,7 @@ from app.knowledge.retrieval.models import (
 )
 from app.llm.rag_grader import RagGrade
 from app.llm.web_grader import WebGrade
+from app.sources.models import PublicSource, Source
 from app.streaming.adapter import (
     GENERATING_MESSAGE,
     PUBLIC_ERROR_MESSAGE,
@@ -20,6 +21,31 @@ from app.websearch.models import WebSearchResult
 @dataclass
 class FakeMessage:
     content: object
+
+
+RAG_SOURCE: PublicSource = {
+    "id": 1,
+    "citation": "[1]",
+    "type": "rag",
+    "title": "Guia OAuth",
+    "source": "oauth.md",
+    "chunkId": "chunk-1",
+    "url": None,
+    "page": 3,
+    "section": "Tokens",
+}
+
+WEB_SOURCE: PublicSource = {
+    "id": 1,
+    "citation": "[1]",
+    "type": "web",
+    "title": "Fonte externa",
+    "source": "https://example.com/oauth",
+    "chunkId": None,
+    "url": "https://example.com/oauth",
+    "page": None,
+    "section": None,
+}
 
 
 class FakeGraph:
@@ -78,8 +104,9 @@ def test_adapter_streams_only_final_generation_tokens() -> None:
                 "updates",
                 {
                     "generate_answer": {
-                        "answer": "Resposta final.",
+                        "answer": "Resposta final [1].",
                         "source": "rag",
+                        "sources": [RAG_SOURCE],
                     }
                 },
             ),
@@ -103,6 +130,7 @@ def test_adapter_streams_only_final_generation_tokens() -> None:
         "sources",
         "token",
         "token",
+        "token",
         "done",
     ]
     assert events[0].data["stage"] == "rag_search"
@@ -110,10 +138,11 @@ def test_adapter_streams_only_final_generation_tokens() -> None:
         "stage": "generating",
         "message": GENERATING_MESSAGE,
     }
-    assert events[2].data == {"sources": []}
+    assert events[2].data == {"sources": [RAG_SOURCE]}
     assert [event.data["text"] for event in events if event.event == "token"] == [
         "Resposta ",
-        "final.",
+        "final ",
+        "[1].",
     ]
     assert "SEGREDO" not in "".join(event.to_sse() for event in events)
     assert events[-1].data == {}
@@ -121,7 +150,7 @@ def test_adapter_streams_only_final_generation_tokens() -> None:
         (
             {"question": "Pergunta"},
             {"configurable": {"thread_id": "conversation-1"}},
-            ["updates", "messages"],
+            ["updates"],
         )
     ]
 
@@ -145,8 +174,9 @@ def test_adapter_exposes_rewrite_status_without_rewrite_tokens() -> None:
                 "updates",
                 {
                     "generate_answer": {
-                        "answer": "Resposta após rewrite.",
+                        "answer": "Resposta após rewrite [1].",
                         "source": "rag",
+                        "sources": [RAG_SOURCE],
                     }
                 },
             ),
@@ -166,9 +196,9 @@ def test_adapter_exposes_rewrite_status_without_rewrite_tokens() -> None:
         "rag_search",
         "generating",
     ]
-    assert [event.data["text"] for event in events if event.event == "token"] == [
-        "Resposta após rewrite."
-    ]
+    assert "".join(
+        event.data["text"] for event in events if event.event == "token"
+    ) == "Resposta após rewrite [1]."
     assert events[-1].event == "done"
 
 
@@ -192,6 +222,7 @@ def test_no_answer_is_sent_as_final_token_before_done() -> None:
                     "no_answer": {
                         "answer": "Informação insuficiente.",
                         "source": "none",
+                        "sources": [],
                     }
                 },
             ),
@@ -210,6 +241,7 @@ def test_no_answer_is_sent_as_final_token_before_done() -> None:
         "status",
         "sources",
         "token",
+        "token",
         "done",
     ]
     statuses = [event.data for event in events if event.event == "status"]
@@ -222,7 +254,12 @@ def test_no_answer_is_sent_as_final_token_before_done() -> None:
         "message": GENERATING_MESSAGE,
     }
     assert "SEGREDO" not in "".join(event.to_sse() for event in events)
-    assert events[-2].data == {"text": "Informação insuficiente."}
+    assert "".join(
+        event.data["text"] for event in events if event.event == "token"
+    ) == "Informação insuficiente."
+    assert next(event for event in events if event.event == "sources").data == {
+        "sources": []
+    }
 
 
 def test_stream_failure_ends_with_safe_error_event() -> None:
@@ -289,8 +326,13 @@ class WebGraderThatMustNotRun:
 
 
 class StaticAnswerGenerator:
-    def generate(self, question: str, documents: list[RetrievedDocument]) -> str:
-        return "Resposta do grafo compilado."
+    def generate(
+        self,
+        question: str,
+        documents: list[object],
+        sources: list[Source],
+    ) -> str:
+        return "Resposta do grafo compilado [1]."
 
 
 def test_adapter_accepts_current_compiled_langgraph_stream_shape() -> None:
@@ -311,9 +353,11 @@ def test_adapter_accepts_current_compiled_langgraph_stream_shape() -> None:
 
     events = list(adapter.stream(conversation_id="c-1", message="Pergunta"))
 
-    assert [event.data["text"] for event in events if event.event == "token"] == [
-        "Resposta do grafo compilado."
-    ]
+    assert "".join(
+        event.data["text"] for event in events if event.event == "token"
+    ) == "Resposta do grafo compilado [1]."
+    sources_event = next(event for event in events if event.event == "sources")
+    assert sources_event.data["sources"][0]["chunkId"] == "chunk-1"
     assert events[-1].event == "done"
 
 
@@ -375,7 +419,37 @@ def test_compiled_web_path_has_status_and_only_final_answer_token() -> None:
         "web_search",
         "generating",
     ]
-    assert [event.data["text"] for event in events if event.event == "token"] == [
-        "Resposta do grafo compilado."
-    ]
+    assert "".join(
+        event.data["text"] for event in events if event.event == "token"
+    ) == "Resposta do grafo compilado [1]."
+    sources_event = next(event for event in events if event.event == "sources")
+    assert sources_event.data == {"sources": [WEB_SOURCE]}
     assert events[-1].event == "done"
+
+
+def test_invented_citation_fails_before_sources_or_tokens_are_emitted() -> None:
+    graph = FakeGraph(
+        [
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
+            ("updates", {"grade_rag": {"rag_relevant": True}}),
+            (
+                "updates",
+                {
+                    "generate_answer": {
+                        "answer": "Referência inventada [2].",
+                        "source": "rag",
+                        "sources": [RAG_SOURCE],
+                    }
+                },
+            ),
+        ]
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=1,
+    )
+
+    events = list(adapter.stream(conversation_id="c-invalid", message="Pergunta"))
+
+    assert events[-1].event == "error"
+    assert all(event.event not in {"sources", "token", "done"} for event in events)
