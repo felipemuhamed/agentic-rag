@@ -1,8 +1,8 @@
-# Containers de desenvolvimento
+# Containers e Docker Compose
 
-Esta estrutura containeriza os componentes implementados: API, knowledge
-ingestion/retrieval, RAG com fallback web e o servidor Chroma. Ela nao representa o
-hardening de producao da Etapa 12.
+A estrutura containeriza API, ingestao/retrieval, RAG e Chroma. A Etapa 12
+acrescentou persistencia dos threads e reducao de privilegios ao Compose
+iniciado durante o desenvolvimento.
 
 ## Imagens
 
@@ -10,161 +10,121 @@ O `Dockerfile` possui tres targets finais:
 
 | Target | Conteudo | Processo padrao |
 |---|---|---|
-| `api` | API HTTP, runtime RAG, web search e adapters de provider | Uvicorn em `0.0.0.0:8000` |
+| `api` | API HTTP, runtime RAG, web search e adapter do provider | Uvicorn em `0.0.0.0:8000` |
 | `knowledge` | API base, client Chroma e Sentence Transformers | `agentic-rag-ingest` |
 | `rag` | Knowledge, LangGraph, graders, gerador e web search | `agentic-rag-ask` |
 
-Todos executam com o usuario sem privilegios `app` (`uid=10001`). As wheels sao
+Todos executam como usuario sem privilegios `app` (`uid=10001`). As wheels sao
 construidas em stages separados e instaladas nas imagens finais sem ferramentas
 de build.
 
 ## Servicos Compose
 
 ```text
-host:8000 -> api
+host:8000 -> api -> checkpoint-data
                 \
                  -> chroma:8000 -> chroma-data
                 /
-ingest --------
-retrieve ------
-rag -----------
+ingest/retrieve/rag
 
-host:8001 -> chroma:8000 (inspecao/desenvolvimento)
+host:8001 -> chroma:8000 (inspecao local)
 ```
 
 ### `chroma`
 
-Executa `chromadb/chroma:1.5.9` em modo servidor e persiste seus dados em
-`/data`. Na rede Compose, os clientes usam `http://chroma:8000`; no host, o
-endpoint fica em `http://127.0.0.1:8001` por padrao.
+Executa `chromadb/chroma:1.5.9` em modo servidor e persiste dados em `/data`.
+Na rede Compose, os clientes usam `http://chroma:8000`; no host, o endpoint fica
+em `http://127.0.0.1:8001` por padrao.
 
-O servico auxiliar `chroma-ready` consulta `/api/v2/healthcheck` e termina com
-sucesso antes que API ou ingestao sejam liberadas. Ele e necessario porque a
-imagem oficial atual contem o binario Rust, sem interpretador Python para um
-healthcheck interno.
+O auxiliar `chroma-ready` consulta `/api/v2/healthcheck` e termina com sucesso
+antes que API ou ferramentas sejam liberadas. Ele existe porque a imagem do
+Chroma nao fornece as ferramentas usadas pelo healthcheck da API.
 
 ### `api`
 
-Sobe por padrao junto com o Chroma, publica `APP_PORT` e possui healthcheck em
-`/health`. A imagem inclui knowledge, LangGraph e o adapter do LLM para servir
-`POST /chat/stream`, mas o grafo e os modelos so sao construidos na primeira
-execucao de chat. Assim, o health check permanece independente do LLM.
+Sobe junto com o Chroma e usa `/ready` no healthcheck. O grafo e os modelos sao
+construidos somente no primeiro chat. O filesystem raiz e somente leitura;
+`/tmp` usa tmpfs; todas as capabilities sao removidas; ganho de privilegio e
+bloqueado; init e shutdown gracioso evitam processos e checkpoints abandonados.
 
 ```bash
 docker compose up --build -d api
 docker compose ps
 ```
 
-O servico recebe a configuracao RAG completa e compartilha `model-cache`. Para
-usar chat, configure `LLM_MODEL` e as credenciais do provider no `.env`:
+O servico compartilha `model-cache` e grava o SQLite em `checkpoint-data`. Para
+chat autenticado, configure `LLM_MODEL`, credenciais do provider,
+`AUTH_ENABLED`, `API_KEY_POLICIES` e o tenant no `.env`:
 
 ```bash
 curl -N http://127.0.0.1:8000/chat/stream \
   -H 'Content-Type: application/json' \
-  -d '{"conversationId":"demo-1","message":"Como renovar o token?"}'
+  -H 'X-API-Key: replace-with-a-real-secret' \
+  -d '{"conversationId":"demo-1","tenantId":"public","message":"Como renovar o token?"}'
 ```
 
-Configure tambem `TAVILY_API_KEY`. Ela nao e usada enquanto a evidencia interna
-for suficiente; sem a chave, apenas uma execucao que alcance o fallback termina
-com `error` publico.
+O fallback Tavily e opcional e desativado por padrao. Para utiliza-lo,
+configure `WEB_SEARCH_ENABLED=true` e `TAVILY_API_KEY`. Com a busca externa
+desativada, evidencia interna insuficiente termina em `source=none`, sem
+interromper o stream.
 
-O runtime usa um checkpointer em memoria dentro do processo `api`. Repetir
-`conversationId` preserva o historico enquanto esse processo estiver vivo, mas
-reiniciar/recriar o container apaga as conversas. Replicas distintas tambem nao
-compartilham estado nesta fase.
+### Ferramentas `ingest`, `retrieve` e `rag`
 
-### `ingest`
-
-Pertence ao profile `tools`, portanto nao sobe junto com a API. Ao selecionar o
-servico explicitamente, o Compose ativa o profile para aquela execucao:
+Os tres servicos pertencem ao profile `tools` e nao sobem com a API. Arquivos
+para ingestao ficam em `./documents`, montado como somente leitura:
 
 ```bash
-docker compose run --rm ingest /documents/arquivo.md
-```
-
-Os arquivos de entrada devem estar em `./documents`, montado como somente
-leitura em `/documents`.
-
-### `retrieve`
-
-Usa a mesma imagem `knowledge`, substituindo o entrypoint pela CLI de retrieval.
-Conecta ao Chroma via HTTP e compartilha o cache dos modelos:
-
-```bash
+docker compose run --rm ingest --tenant-id public /documents/arquivo.md
 docker compose run --rm retrieve "Como renovar um access token?"
-```
-
-### `rag`
-
-Executa o RAG ate a Etapa 9 e pertence ao profile `tools`. Configure no `.env`
-o `LLM_MODEL` no formato `provider:model`, as credenciais do LLM e
-`TAVILY_API_KEY`:
-
-```bash
-docker compose build rag
 docker compose run --rm rag "Como renovar um access token?"
 ```
 
-O target instala `langchain-openai==1.5.1` por padrao. Para outro provider,
-defina `LLM_PROVIDER_PACKAGE` com o pacote de integracao correspondente antes
-do build e use um `LLM_MODEL` compativel. O `.env` completo e repassado apenas
-ao servico `rag`, permitindo fornecer as variaveis exigidas pelo adapter.
-`MAX_RAG_ATTEMPTS` define o total de retrievals, incluindo a consulta original,
-e tem padrao `2`. `WEB_SEARCH_MAX_RESULTS`, `WEB_SEARCH_DEPTH` e
-`WEB_SEARCH_TIMEOUT_SECONDS` controlam a unica chamada externa posterior.
+`api` e `rag` instalam `langchain-openrouter==0.2.8` por padrao. Para outro
+provider, defina `LLM_PROVIDER_PACKAGE` antes do build e use um `LLM_MODEL`
+compativel. O `.env` completo e repassado somente a esses servicos; as
+credenciais nao entram na imagem.
 
 ## Persistencia
 
 | Volume | Montagem | Finalidade |
 |---|---|---|
-| `chroma-data` | Chroma: `/data` | Collection e embeddings persistidos |
-| `model-cache` | `/home/app/.cache/huggingface` | Modelos baixados pelo provider |
+| `chroma-data` | Chroma: `/data` | Collection e embeddings |
+| `checkpoint-data` | API: `/data/checkpoints` | Threads SQLite |
+| `model-cache` | `/home/app/.cache/huggingface` | Modelos baixados |
 
-O historico conversacional nao esta nesses volumes. Chroma armazena somente a
-base de conhecimento; ele nao e usado como checkpointer do LangGraph.
-
-Parar containers nao remove esses dados:
+Chroma armazena apenas a base de conhecimento; mensagens ficam no
+checkpointer. Parar os containers preserva todos os volumes:
 
 ```bash
 docker compose down
 ```
 
-Para reinicializar completamente o ambiente, inclusive a base indexada e o
-cache de modelos:
+`docker compose down -v` remove conhecimento, threads e cache e e uma operacao
+destrutiva. Defina backup e retencao antes de usar volumes de producao.
 
-```bash
-docker compose down -v
-```
+## Configuracao e limites
 
-Esse ultimo comando e destrutivo para os dados dos volumes.
+O Compose le `.env` e aplica defaults documentados em `.env.example`. API e
+Chroma aceitam conexoes do host apenas em `127.0.0.1` por padrao. O Chroma nao
+possui autenticacao nesta topologia e precisa permanecer em rede privada.
 
-## Configuracao
+`CHECKPOINTER_MODE=sqlite` e apropriado para uma instancia. O rate limiter
+tambem e local ao processo. Para replicas concorrentes, use checkpointer e
+limites compartilhados. TLS, WAF, secrets e autenticacao entre servicos devem
+ser fornecidos pela plataforma. Consulte [`production.md`](production.md).
 
-O Compose le `.env` automaticamente. As variaveis documentadas em
-`.env.example` controlam portas, binds, tag, versao do Python, imagem Chroma,
-modelo, adapter do LLM, collection e parametros de chunking. API e Chroma
-aceitam conexoes do host apenas em `127.0.0.1` por padrao. A URL do endpoint
-Tavily pode ser substituida por `TAVILY_BASE_URL` para testes ou gateways
-aprovados.
-
-O Chroma desta configuracao de desenvolvimento nao possui autenticacao. Nao
-publique sua porta em uma interface externa sem adicionar os controles da etapa
-de hardening.
-
-Para usar aceleracao, a configuracao de GPU devera ser acrescentada de acordo
-com o runtime do host. O Compose atual usa CPU por padrao e nao pressupoe NVIDIA
-Container Toolkit.
+O Compose usa CPU. Aceleracao requer configuracao do runtime do host e nao
+pressupoe NVIDIA Container Toolkit.
 
 ## Verificacoes recomendadas
-
-Em uma maquina com Docker Compose V2:
 
 ```bash
 docker compose config --quiet
 docker compose build api
 docker compose up -d api
 curl --fail http://127.0.0.1:8001/api/v2/healthcheck
-docker compose exec api python -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8000/health').status)"
+curl --fail http://127.0.0.1:8000/health
+curl --fail http://127.0.0.1:8000/ready
 docker compose run --rm ingest --help
 docker compose run --rm retrieve --help
 docker compose run --rm rag --help

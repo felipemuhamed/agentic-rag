@@ -1,20 +1,23 @@
 # Threads e memoria conversacional
 
-A Etapa 8 adiciona continuidade entre chamadas de `POST /chat/stream` sem
-misturar historico de conversa com a base de conhecimento.
+A Etapa 8 adicionou continuidade entre chamadas de `POST /chat/stream` sem
+misturar historico de conversa com a base de conhecimento. A Etapa 12 tornou
+essa memoria duravel e associou os threads a identidade autorizada.
 
 ## Identidade do thread
 
-O contrato HTTP continua recebendo `conversationId`. No limite entre o adapter
-SSE e o LangGraph, o valor e passado como:
+O contrato HTTP recebe `conversationId`. Sem autenticacao, o adapter ainda pode
+usar esse valor diretamente em desenvolvimento. Com `AUTH_ENABLED=true`, a API
+autoriza `X-API-Key` e `tenantId` e calcula:
 
-```python
-config={"configurable": {"thread_id": conversation_id}}
+```text
+thread_id = sha256(principal + tenant + conversationId)
 ```
 
-O grafo e criado uma vez por processo da API e compilado com
-`InMemorySaver`. Duas chamadas com o mesmo ID recuperam o checkpoint mais
-recente; IDs diferentes possuem estados independentes.
+Somente esse digest e enviado como `configurable.thread_id`. Assim,
+`conversationId` iguais de tenants ou principals diferentes possuem estados
+independentes e o identificador publico nao e gravado diretamente no
+checkpointer.
 
 ## Preparacao da consulta
 
@@ -31,8 +34,7 @@ prepared:   "Como configurar OAuth no Keycloak?"
 
 `prepared_query` e a intencao estavel do turno. `search_query` comeca com esse
 valor e pode mudar durante os retries. O texto original permanece em
-`question`, para que o par de mensagens persistido represente o que o usuario
-realmente escreveu.
+`question`, para que o par de mensagens represente o que o usuario escreveu.
 
 ## Fronteira de contexto
 
@@ -42,27 +44,33 @@ Isso reduz acoplamento, consumo de contexto e o risco de instrucoes antigas
 afetarem gates que nao precisam delas.
 
 Chroma continua armazenando documentos e embeddings da base de conhecimento.
-Mensagens de usuario e respostas nao sao indexadas nem gravadas no Chroma.
+Mensagens e respostas nao sao indexadas nem gravadas no Chroma. O tenant da
+conversa e aplicado separadamente como filtro de retrieval.
 
-## Limites do ambiente de desenvolvimento
+## Backends de checkpoint
 
-`InMemorySaver` nao oferece durabilidade nem compartilhamento entre processos:
+`CHECKPOINTER_MODE=memory` usa `InMemorySaver`: e rapido para testes, mas perde
+todos os threads ao reiniciar e nao compartilha estado entre processos.
 
-- reiniciar a API perde todos os threads;
-- duas replicas mantem memorias diferentes;
-- nao ha TTL, exclusao por usuario ou administracao de checkpoints;
-- o `conversationId` ainda nao e associado a uma identidade autenticada.
+`CHECKPOINTER_MODE=sqlite` usa um arquivo SQLite com WAL, espera para locks e
+serializacao estrita. O Compose monta `checkpoint-data` no caminho do arquivo,
+por isso recriar o container da API preserva as conversas. Esse modo atende uma
+instancia; replicas em hosts distintos exigem um saver compartilhado, como
+PostgreSQL.
 
-Esses pontos exigem um checkpointer duravel e controles de seguranca antes de
-producao, previstos na Etapa 12. A CLI cria um `thread_id` unico por execucao e,
-portanto, permanece intencionalmente single-turn.
+O produto ainda precisa definir retencao, exclusao por titular e backup
+conforme seus requisitos de privacidade. A CLI cria um `thread_id` unico por
+execucao e permanece intencionalmente single-turn. Consulte
+[`production.md`](production.md) para a operacao.
 
 ## Criterios automatizados
 
-Os testes da etapa verificam que:
+Os testes verificam que:
 
 1. um primeiro turno nao chama o preparer via LLM;
 2. "E no Keycloak?" vira uma consulta OAuth autocontida no mesmo thread;
-3. a mesma mensagem em outro ID nao recebe o historico anterior;
-4. os checkpoints dos dois IDs contem somente suas proprias mensagens;
-5. mensagens humanas persistidas nao sao emitidas como tokens SSE.
+3. outro ID nao recebe o historico anterior;
+4. os checkpoints isolam suas mensagens;
+5. mensagens humanas nao sao emitidas como tokens SSE;
+6. o estado SQLite sobrevive ao fechamento e reabertura do runtime;
+7. principal e tenant diferentes produzem IDs de thread distintos.

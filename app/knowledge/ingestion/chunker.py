@@ -41,6 +41,8 @@ class TextChunker:
                 metadata["page"] = document.page
             if document.url is not None:
                 metadata["url"] = document.url
+            if document.tenant_id:
+                metadata["tenant_id"] = document.tenant_id
 
             chunks.append(
                 Chunk(

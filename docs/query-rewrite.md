@@ -20,7 +20,8 @@ Com o padrao `MAX_RAG_ATTEMPTS=2`, o fluxo permite:
 
 1. retrieval da pergunta original;
 2. no maximo um rewrite e um segundo retrieval;
-3. resposta, se o segundo grade for positivo, ou fallback web caso contrario.
+3. resposta, se o segundo grade for positivo; caso contrario, fallback web
+   quando habilitado ou `no_answer` quando desabilitado.
 
 O construtor do grafo e as settings rejeitam valores menores que um. Como a
 decisao de continuar depende do contador, uma query reescrita igual a anterior

@@ -18,6 +18,7 @@ class SourceDocument:
     page: int | None = None
     url: str | None = None
     media_type: str = "text/plain"
+    tenant_id: str = ""
 
     def with_content(self, content: str) -> "SourceDocument":
         return replace(self, content=content)

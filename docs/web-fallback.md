@@ -8,11 +8,12 @@ esgotar `MAX_RAG_ATTEMPTS`.
 ```text
 grade_rag relevant=true  -> generate_answer(source=rag)
 grade_rag false + budget -> rewrite_query -> retrieve_rag
-grade_rag false no limite -> search_web -> grade_web
+grade_rag false no limite + WEB_SEARCH_ENABLED=true -> search_web -> grade_web
                                            | relevant=true
                                            | -> generate_answer(source=web)
                                            | relevant=false
                                            | -> no_answer(source=none)
+grade_rag false no limite + WEB_SEARCH_ENABLED=false -> no_answer(source=none)
 ```
 
 Nao ha escolha livre de ferramentas pelo modelo. A conditional edge do grafo e
@@ -36,9 +37,10 @@ Cada `WebSearchResult` valido preserva:
 - metadata com `source`, `url`, `title` e `provider`.
 
 Entradas malformadas do resultado sao descartadas. Uma resposta estruturalmente
-invalida do endpoint e tratada como falha, nao como evidencia vazia. A chave de
-API nao e validada na construcao do grafo: ela passa a ser obrigatoria somente
-se `search_web` for realmente executado.
+invalida do endpoint e tratada como falha, nao como evidencia vazia. A busca
+externa fica desativada por padrao. Quando ativada, a chave e validada na
+configuracao antes da construcao e execucao do grafo, evitando uma falha tardia
+no stream.
 
 ## Segundo gate
 
@@ -59,6 +61,7 @@ estruturada invalida interrompe o fluxo e vira `error` seguro no SSE.
 ## Configuracao
 
 ```dotenv
+WEB_SEARCH_ENABLED=true
 WEB_SEARCH_PROVIDER=tavily
 WEB_SEARCH_MAX_RESULTS=5
 WEB_SEARCH_DEPTH=basic
@@ -66,6 +69,9 @@ WEB_SEARCH_TIMEOUT_SECONDS=10
 TAVILY_API_KEY=...
 TAVILY_BASE_URL=https://api.tavily.com
 ```
+
+Com `WEB_SEARCH_ENABLED=false`, o grafo pula `search_web` e termina em
+`no_answer` quando a base interna nao fornece evidencia suficiente.
 
 `WEB_SEARCH_MAX_RESULTS` aceita de 1 a 20. As profundidades aceitas sao
 `basic`, `advanced`, `fast` e `ultra-fast`. O request desabilita respostas

@@ -9,17 +9,20 @@ streaming do LangGraph dentro de `app/streaming`.
 POST /chat/stream
 Content-Type: application/json
 Accept: text/event-stream
+X-API-Key: <chave, quando AUTH_ENABLED=true>
 
 {
   "conversationId": "demo-1",
+  "tenantId": "public",
   "message": "Como renovar o token?"
 }
 ```
 
-Os dois campos sao obrigatorios, textuais e nao podem conter apenas espacos.
-O adapter converte `conversationId` em `configurable.thread_id`. Repetir o ID
-continua a conversa; usar outro ID inicia um estado isolado. O checkpointer
-atual e local ao processo, conforme detalhado em [`memory.md`](memory.md).
+`conversationId` e `message` sao obrigatorios, textuais e nao podem conter
+apenas espacos. `tenantId` e obrigatorio quando a autenticacao esta ativa. A
+mensagem aceita ate 8.000 caracteres e os IDs ate 128. Campos desconhecidos sao
+rejeitados. O thread interno combina principal, tenant e conversa, conforme
+detalhado em [`memory.md`](memory.md).
 
 ## Eventos publicos
 
@@ -83,14 +86,20 @@ event: error
 data: {"code":"stream_failed","message":"Não foi possível concluir a resposta."}
 ```
 
+Um deadline total excedido usa `code=stream_timeout`. Cancelamento pelo cliente
+encerra a iteracao sem evento terminal, pois a conexao ja nao esta disponivel.
 O payload nunca inclui stack trace, prompt, resposta interna do grader ou texto
 da excecao. Erros de validacao do request ocorrem antes da abertura do stream e
 continuam usando a resposta HTTP `422` do FastAPI.
 
+Falha de autenticacao retorna HTTP `401`, tenant nao autorizado retorna `403` e
+quota esgotada retorna `429` com `Retry-After`, todos antes da abertura do SSE.
+
 ## Headers
 
 A resposta usa `Content-Type: text/event-stream`, `Cache-Control: no-cache` e
-`X-Accel-Buffering: no`. O cliente deve processar eventos progressivamente e
+`X-Accel-Buffering: no`. Inclui tambem `X-Request-ID`, `X-RateLimit-Limit` e
+`X-RateLimit-Remaining`. O cliente deve processar eventos progressivamente e
 considerar a execucao encerrada somente ao receber `done` ou `error`.
 
 ## Carregamento do runtime
@@ -98,4 +107,6 @@ considerar a execucao encerrada somente ao receber `done` ou `error`.
 O adapter recebe uma factory do grafo. Chroma, embedding, reranker e LLM nao sao
 carregados durante import da aplicacao nem em `GET /health`; a inicializacao
 ocorre dentro do stream da primeira requisicao. Falhas nessa fase tambem sao
-convertidas em `error` publico.
+convertidas em `error` publico e fazem `/ready` responder `503` ate que uma
+inicializacao posterior seja bem-sucedida. Os controles completos estao em
+[`production.md`](production.md).

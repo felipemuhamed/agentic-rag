@@ -57,11 +57,17 @@ class StructuredOutputModel(Protocol):
 
 
 class LangChainWebGrader:
-    def __init__(self, model: StructuredOutputModel):
+    def __init__(self, model: StructuredOutputModel, *, max_attempts: int = 1):
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be at least one")
         structured_model = model.with_structured_output(WebGrade)
         if hasattr(structured_model, "with_config"):
             structured_model = structured_model.with_config(
                 {"tags": ["web-grader", "nostream"]}
+            )
+        if max_attempts > 1 and hasattr(structured_model, "with_retry"):
+            structured_model = structured_model.with_retry(
+                stop_after_attempt=max_attempts,
             )
         self._model = structured_model
 

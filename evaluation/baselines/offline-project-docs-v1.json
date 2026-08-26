@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-08-24T17:03:56.063522+00:00",
+  "generated_at": "2026-08-25T20:18:58.539408+00:00",
   "dataset": {
     "name": "agentic-rag-project-docs",
-    "version": "1.0.0",
-    "sha256": "7a321594eef4880223cf11432ddafe43e3718859f390a6be53ad4f504d8161ed",
-    "corpus_sha256": "af61a955cb3d0a419bfa94838e18532e45ecb2c38afc7bda4ad3947bd5ede88b",
+    "version": "1.1.0",
+    "sha256": "1c784415f9242691c0a619f2c8eeacdb8b6ff9239613776ef7cc3a5a103772f2",
+    "corpus_sha256": "7312a920711595e42581300d0f21e74a1616cbcf5e228a371a8cae7241a862b9",
     "cases": 6
   },
   "configuration": {
@@ -28,27 +28,27 @@
   "summary": {
     "retrieval": {
       "recall_at_k": {
-        "1": 0.833333,
-        "3": 0.833333,
+        "1": 1.0,
+        "3": 1.0,
         "5": 1.0
       },
-      "mrr": 0.866667,
+      "mrr": 1.0,
       "latency": {
-        "mean_ms": 552.83,
-        "p50_ms": 541.229,
-        "p95_ms": 656.673
+        "mean_ms": 432.093,
+        "p50_ms": 431.427,
+        "p95_ms": 443.444
       }
     },
     "answers": {
       "evaluated_cases": 6,
-      "relevance": 0.179781,
+      "relevance": 0.153807,
       "grounding": 1.0,
       "citation_validity": 1.0,
-      "expected_source_recall": 0.666667,
+      "expected_source_recall": 1.0,
       "latency": {
-        "mean_ms": 0.994,
-        "p50_ms": 0.942,
-        "p95_ms": 1.264
+        "mean_ms": 0.985,
+        "p50_ms": 0.869,
+        "p95_ms": 1.359
       },
       "usage": {
         "calls": 6,
@@ -76,6 +76,22 @@
         },
         {
           "rank": 2,
+          "chunk_id": "docs/query-rewrite.md#chunk:1",
+          "document_id": null,
+          "source": "docs/query-rewrite.md",
+          "retrieval_score": -0.704196010845019,
+          "rerank_score": 0.14852213144650114
+        },
+        {
+          "rank": 3,
+          "chunk_id": "docs/web-fallback.md#chunk:3",
+          "document_id": null,
+          "source": "docs/web-fallback.md",
+          "retrieval_score": -0.8344788222795265,
+          "rerank_score": 0.1380861926847485
+        },
+        {
+          "rank": 4,
           "chunk_id": "docs/query-rewrite.md#chunk:4",
           "document_id": null,
           "source": "docs/query-rewrite.md",
@@ -83,28 +99,12 @@
           "rerank_score": 0.11470786693528087
         },
         {
-          "rank": 3,
+          "rank": 5,
           "chunk_id": "docs/citations.md#chunk:5",
           "document_id": null,
           "source": "docs/citations.md",
           "retrieval_score": -0.8543071206464103,
           "rerank_score": 0.11043152607484653
-        },
-        {
-          "rank": 4,
-          "chunk_id": "docs/citations.md#chunk:4",
-          "document_id": null,
-          "source": "docs/citations.md",
-          "retrieval_score": -0.8713760611431183,
-          "rerank_score": 0.09534625892455924
-        },
-        {
-          "rank": 5,
-          "chunk_id": "docs/web-fallback.md#chunk:3",
-          "document_id": null,
-          "source": "docs/web-fallback.md",
-          "retrieval_score": -0.7613328147472809,
-          "rerank_score": 0.0944911182523068
         }
       ],
       "retrieval": {
@@ -114,7 +114,7 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 584.586
+        "latency_ms": 422.401
       },
       "answer": "id e citation: identificador numerico e rotulo exibido na resposta; [1]",
       "answer_metrics": {
@@ -122,7 +122,7 @@
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 0.951,
+        "latency_ms": 0.833,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -136,43 +136,43 @@
       "retrieved": [
         {
           "rank": 1,
-          "chunk_id": "docs/containers.md#chunk:8",
+          "chunk_id": "docs/containers.md#chunk:6",
           "document_id": null,
           "source": "docs/containers.md",
-          "retrieval_score": -0.6837722339831619,
-          "rerank_score": 0.24806946917841693
+          "retrieval_score": -0.6072077975752136,
+          "rerank_score": 0.17928429140015903
         },
         {
           "rank": 2,
-          "chunk_id": "docs/containers.md#chunk:7",
+          "chunk_id": "docs/containers.md#chunk:8",
           "document_id": null,
           "source": "docs/containers.md",
-          "retrieval_score": -0.5080650449500463,
-          "rerank_score": 0.24120907566221086
+          "retrieval_score": -0.5164816918276004,
+          "rerank_score": 0.13483997249264842
         },
         {
           "rank": 3,
-          "chunk_id": "docs/containers.md#chunk:9",
-          "document_id": null,
-          "source": "docs/containers.md",
-          "retrieval_score": -0.6310676063136889,
-          "rerank_score": 0.19364916731037085
-        },
-        {
-          "rank": 4,
           "chunk_id": "docs/containers.md#chunk:5",
           "document_id": null,
           "source": "docs/containers.md",
-          "retrieval_score": -0.7015189971021453,
-          "rerank_score": 0.18973665961010278
+          "retrieval_score": -0.6385968388378994,
+          "rerank_score": 0.1318760946791574
+        },
+        {
+          "rank": 4,
+          "chunk_id": "docs/retrieval.md#chunk:3",
+          "document_id": null,
+          "source": "docs/retrieval.md",
+          "retrieval_score": -0.8471058425687124,
+          "rerank_score": 0.12777531299998798
         },
         {
           "rank": 5,
-          "chunk_id": "docs/containers.md#chunk:10",
+          "chunk_id": "docs/containers.md#chunk:3",
           "document_id": null,
           "source": "docs/containers.md",
-          "retrieval_score": -0.4814639182758901,
-          "rerank_score": 0.14907119849998599
+          "retrieval_score": -0.7999999999999999,
+          "rerank_score": 0.12171612389003691
         }
       ],
       "retrieval": {
@@ -182,15 +182,15 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 663.582
+        "latency_ms": 438.922
       },
-      "answer": "docker compose down -v [1]",
+      "answer": "docker compose down [1]",
       "answer_metrics": {
         "relevance": 0.0,
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 1.146,
+        "latency_ms": 1.389,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -200,65 +200,65 @@
     },
     {
       "id": "conversation-isolation",
-      "question": "Como as conversas sao isoladas e qual e a limitacao atual da memoria?",
+      "question": "Como as conversas autenticadas sao isoladas e qual e a limitacao do checkpointer SQLite?",
       "retrieved": [
         {
           "rank": 1,
-          "chunk_id": "docs/containers.md#chunk:2",
+          "chunk_id": "docs/memory.md#chunk:4",
           "document_id": null,
-          "source": "docs/containers.md",
-          "retrieval_score": -0.8267602678311907,
-          "rerank_score": 0.09523809523809523
+          "source": "docs/memory.md",
+          "retrieval_score": -0.7464537235814448,
+          "rerank_score": 0.14708710135363803
         },
         {
           "rank": 2,
-          "chunk_id": "docs/containers.md#chunk:4",
+          "chunk_id": "docs/memory.md#chunk:6",
           "document_id": null,
-          "source": "docs/containers.md",
-          "retrieval_score": -0.8848705665319995,
-          "rerank_score": 0.0944911182523068
+          "source": "docs/memory.md",
+          "retrieval_score": -0.8607284963672112,
+          "rerank_score": 0.10425720702853739
         },
         {
           "rank": 3,
-          "chunk_id": "docs/citations.md#chunk:0",
+          "chunk_id": "docs/containers.md#chunk:6",
           "document_id": null,
-          "source": "docs/citations.md",
-          "retrieval_score": -0.8242500899345012,
-          "rerank_score": 0.05698028822981897
+          "source": "docs/containers.md",
+          "retrieval_score": -0.8619868881315291,
+          "rerank_score": 0.0944911182523068
         },
         {
           "rank": 4,
-          "chunk_id": "docs/retrieval.md#chunk:1",
+          "chunk_id": "docs/containers.md#chunk:7",
           "document_id": null,
-          "source": "docs/retrieval.md",
-          "retrieval_score": -0.8989847455447789,
-          "rerank_score": 0.0563436169819011
+          "source": "docs/containers.md",
+          "retrieval_score": -0.8814145877436858,
+          "rerank_score": 0.09284766908852593
         },
         {
           "rank": 5,
-          "chunk_id": "docs/memory.md#chunk:1",
+          "chunk_id": "docs/web-fallback.md#chunk:7",
           "document_id": null,
-          "source": "docs/memory.md",
-          "retrieval_score": -0.9541650751485894,
-          "rerank_score": 0.0563436169819011
+          "source": "docs/web-fallback.md",
+          "retrieval_score": -0.8585786437626906,
+          "rerank_score": 0.07537783614444091
         }
       ],
       "retrieval": {
         "recall_at_k": {
-          "1": 0.0,
-          "3": 0.0,
+          "1": 1.0,
+          "3": 1.0,
           "5": 1.0
         },
-        "reciprocal_rank": 0.2,
-        "latency_ms": 635.945
+        "reciprocal_rank": 1.0,
+        "latency_ms": 444.951
       },
-      "answer": "imagem oficial atual contem o binario Rust, sem interpretador Python para um [1]",
+      "answer": "CHECKPOINTER_MODE=sqlite usa um arquivo SQLite com WAL, espera para locks e [1]",
       "answer_metrics": {
-        "relevance": 0.0,
+        "relevance": 0.07142857142857142,
         "grounding": 1.0,
         "citation_validity": 1.0,
-        "expected_source_recall": 0.0,
-        "latency_ms": 1.303,
+        "expected_source_recall": 1.0,
+        "latency_ms": 1.268,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -280,35 +280,35 @@
         },
         {
           "rank": 2,
-          "chunk_id": "docs/web-fallback.md#chunk:0",
-          "document_id": null,
-          "source": "docs/web-fallback.md",
-          "retrieval_score": -0.8202787113276027,
-          "rerank_score": 0.21650635094610968
-        },
-        {
-          "rank": 3,
-          "chunk_id": "docs/containers.md#chunk:6",
-          "document_id": null,
-          "source": "docs/containers.md",
-          "retrieval_score": -0.6249999999999998,
-          "rerank_score": 0.21442250696755896
-        },
-        {
-          "rank": 4,
           "chunk_id": "docs/query-rewrite.md#chunk:1",
           "document_id": null,
           "source": "docs/query-rewrite.md",
-          "retrieval_score": -0.7418011102528388,
-          "rerank_score": 0.21259760138109357
+          "retrieval_score": -0.8536149890577199,
+          "rerank_score": 0.2286647801900118
         },
         {
-          "rank": 5,
+          "rank": 3,
           "chunk_id": "docs/query-rewrite.md#chunk:3",
           "document_id": null,
           "source": "docs/query-rewrite.md",
           "retrieval_score": -0.7703423939126872,
           "rerank_score": 0.1555427542095638
+        },
+        {
+          "rank": 4,
+          "chunk_id": "docs/query-rewrite.md#chunk:4",
+          "document_id": null,
+          "source": "docs/query-rewrite.md",
+          "retrieval_score": -0.865768788957195,
+          "rerank_score": 0.13245323570650439
+        },
+        {
+          "rank": 5,
+          "chunk_id": "docs/citations.md#chunk:1",
+          "document_id": null,
+          "source": "docs/citations.md",
+          "retrieval_score": -0.8679323640511565,
+          "rerank_score": 0.062257280636469035
         }
       ],
       "retrieval": {
@@ -318,15 +318,15 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 497.872
+        "latency_ms": 428.982
       },
-      "answer": "MAX_RAG_ATTEMPTS define o total de retrievals, incluindo a consulta original, [3]",
+      "answer": "MAX_RAG_ATTEMPTS e o numero total permitido de retrievals, [1]",
       "answer_metrics": {
-        "relevance": 0.7272727272727274,
+        "relevance": 0.5,
         "grounding": 1.0,
         "citation_validity": 1.0,
-        "expected_source_recall": 0.0,
-        "latency_ms": 0.789,
+        "expected_source_recall": 1.0,
+        "latency_ms": 0.784,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -348,6 +348,14 @@
         },
         {
           "rank": 2,
+          "chunk_id": "docs/containers.md#chunk:2",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.9078557324749073,
+          "rerank_score": 0.12456821978060995
+        },
+        {
+          "rank": 3,
           "chunk_id": "docs/citations.md#chunk:2",
           "document_id": null,
           "source": "docs/citations.md",
@@ -355,7 +363,7 @@
           "rerank_score": 0.11766968108291041
         },
         {
-          "rank": 3,
+          "rank": 4,
           "chunk_id": "docs/citations.md#chunk:4",
           "document_id": null,
           "source": "docs/citations.md",
@@ -363,20 +371,12 @@
           "rerank_score": 0.08528028654224416
         },
         {
-          "rank": 4,
-          "chunk_id": "docs/containers.md#chunk:6",
-          "document_id": null,
-          "source": "docs/containers.md",
-          "retrieval_score": -0.9354502775632096,
-          "rerank_score": 0.08304547985373997
-        },
-        {
           "rank": 5,
-          "chunk_id": "docs/query-rewrite.md#chunk:3",
+          "chunk_id": "docs/web-fallback.md#chunk:3",
           "document_id": null,
-          "source": "docs/query-rewrite.md",
-          "retrieval_score": -0.8932647899552769,
-          "rerank_score": 0.08032193289024989
+          "source": "docs/web-fallback.md",
+          "retrieval_score": -0.9629883394901197,
+          "rerank_score": 0.08233869695926183
         }
       ],
       "retrieval": {
@@ -386,7 +386,7 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 467.911
+        "latency_ms": 433.872
       },
       "answer": "| RAG_FINAL_K | 5 | Chunks finais depois do reranking | [1]",
       "answer_metrics": {
@@ -394,7 +394,7 @@
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 0.932,
+        "latency_ms": 0.905,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -411,11 +411,19 @@
           "chunk_id": "docs/web-fallback.md#chunk:1",
           "document_id": null,
           "source": "docs/web-fallback.md",
-          "retrieval_score": -0.7388835160664532,
+          "retrieval_score": -0.7499999999999998,
           "rerank_score": 0.1636634176769943
         },
         {
           "rank": 2,
+          "chunk_id": "docs/web-fallback.md#chunk:3",
+          "document_id": null,
+          "source": "docs/web-fallback.md",
+          "retrieval_score": -0.8758591167096449,
+          "rerank_score": 0.1380861926847485
+        },
+        {
+          "rank": 3,
           "chunk_id": "docs/query-rewrite.md#chunk:4",
           "document_id": null,
           "source": "docs/query-rewrite.md",
@@ -423,7 +431,7 @@
           "rerank_score": 0.11470786693528087
         },
         {
-          "rank": 3,
+          "rank": 4,
           "chunk_id": "docs/citations.md#chunk:1",
           "document_id": null,
           "source": "docs/citations.md",
@@ -431,20 +439,12 @@
           "rerank_score": 0.10783277320343841
         },
         {
-          "rank": 4,
-          "chunk_id": "docs/citations.md#chunk:4",
-          "document_id": null,
-          "source": "docs/citations.md",
-          "retrieval_score": -0.8713760611431183,
-          "rerank_score": 0.09534625892455924
-        },
-        {
           "rank": 5,
-          "chunk_id": "docs/web-fallback.md#chunk:3",
+          "chunk_id": "docs/query-rewrite.md#chunk:1",
           "document_id": null,
-          "source": "docs/web-fallback.md",
-          "retrieval_score": -0.8806664073736404,
-          "rerank_score": 0.0944911182523068
+          "source": "docs/query-rewrite.md",
+          "retrieval_score": -0.8732268617907224,
+          "rerank_score": 0.09901475429766744
         }
       ],
       "retrieval": {
@@ -454,7 +454,7 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 467.084
+        "latency_ms": 423.429
       },
       "answer": "a unica responsavel por acionar web, e existe no maximo uma busca externa por [1]",
       "answer_metrics": {
@@ -462,7 +462,7 @@
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 0.843,
+        "latency_ms": 0.733,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,

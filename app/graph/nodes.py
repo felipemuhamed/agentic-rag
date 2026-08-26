@@ -1,4 +1,4 @@
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -15,7 +15,11 @@ from app.websearch.base import WebSearchProvider
 
 
 class RetrievalService(Protocol):
-    def retrieve(self, query: str) -> RetrievalResult: ...
+    def retrieve(
+        self,
+        query: str,
+        filters: dict[str, Any] | None = None,
+    ) -> RetrievalResult: ...
 
 
 class RagNodes:
@@ -30,6 +34,7 @@ class RagNodes:
         web_grader: WebGrader,
         answer_generator: AnswerGenerator,
         max_rag_attempts: int,
+        web_search_enabled: bool = True,
     ):
         if max_rag_attempts < 1:
             raise ValueError("max_rag_attempts must be at least 1")
@@ -41,6 +46,7 @@ class RagNodes:
         self._web_grader = web_grader
         self._answer_generator = answer_generator
         self._max_rag_attempts = max_rag_attempts
+        self._web_search_enabled = web_search_enabled
 
     def prepare_query(self, state: RagState) -> dict[str, object]:
         question = state["question"].strip()
@@ -63,7 +69,12 @@ class RagNodes:
         }
 
     def retrieve_rag(self, state: RagState) -> dict[str, object]:
-        result = self._retriever.retrieve(state["search_query"])
+        filters = state.get("retrieval_filters")
+        result = (
+            self._retriever.retrieve(state["search_query"], filters=filters)
+            if filters
+            else self._retriever.retrieve(state["search_query"])
+        )
         return {
             "documents": result.documents,
             "retrieval_diagnostics": result.diagnostics,
@@ -84,12 +95,12 @@ class RagNodes:
     def route_after_grade(
         self,
         state: RagState,
-    ) -> Literal["answer", "rewrite", "web"]:
+    ) -> Literal["answer", "rewrite", "web", "no_answer"]:
         if state["rag_relevant"]:
             return "answer"
         if state["retrieval_attempts"] < self._max_rag_attempts:
             return "rewrite"
-        return "web"
+        return "web" if self._web_search_enabled else "no_answer"
 
     def rewrite_query(self, state: RagState) -> dict[str, object]:
         rewritten_query = self._query_rewriter.rewrite(

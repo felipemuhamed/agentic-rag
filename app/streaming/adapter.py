@@ -1,8 +1,10 @@
 import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from time import monotonic
 from typing import Protocol
 
+from app.knowledge.models import MetadataValue
 from app.sources.citations import citation_ids, select_cited_sources
 from app.sources.models import PublicSource, Source
 from app.streaming.events import StreamEvent
@@ -15,13 +17,14 @@ QUERY_REWRITE_MESSAGE = "Reformulando a busca..."
 WEB_SEARCH_MESSAGE = "Buscando fontes externas..."
 GENERATING_MESSAGE = "Gerando a resposta..."
 PUBLIC_ERROR_MESSAGE = "Não foi possível concluir a resposta."
+PUBLIC_TIMEOUT_MESSAGE = "A resposta excedeu o tempo máximo de processamento."
 ANSWER_CHUNK_PATTERN = re.compile(r"\S+\s*")
 
 
 class StreamableRagGraph(Protocol):
     def stream(
         self,
-        input: dict[str, str],
+        input: dict[str, object],
         *,
         config: dict[str, dict[str, str]],
         stream_mode: list[str],
@@ -34,32 +37,57 @@ class LangGraphStreamAdapter:
         *,
         graph_factory: Callable[[], StreamableRagGraph],
         max_rag_attempts: int,
+        web_search_enabled: bool = True,
+        max_duration_seconds: float = 120.0,
+        clock: Callable[[], float] = monotonic,
     ):
         if max_rag_attempts < 1:
             raise ValueError("max_rag_attempts must be at least 1")
+        if max_duration_seconds <= 0:
+            raise ValueError("max_duration_seconds must be positive")
         self._graph_factory = graph_factory
         self._max_rag_attempts = max_rag_attempts
+        self._web_search_enabled = web_search_enabled
+        self._max_duration_seconds = max_duration_seconds
+        self._clock = clock
 
     def stream(
         self,
         *,
         conversation_id: str,
         message: str,
+        thread_id: str | None = None,
+        retrieval_filters: dict[str, MetadataValue] | None = None,
+        is_cancelled: Callable[[], bool] | None = None,
     ) -> Iterator[StreamEvent]:
+        started_at = self._clock()
+        cancelled = is_cancelled or (lambda: False)
         yield _status("rag_search", RAG_SEARCH_MESSAGE)
 
         retrieval_attempts = 0
         final_result: tuple[str, str, list[PublicSource]] | None = None
         last_status = "rag_search"
 
+        internal_stream: Iterable[tuple[str, object]] | None = None
         try:
             graph = self._graph_factory()
+            graph_input: dict[str, object] = {"question": message}
+            if retrieval_filters:
+                graph_input["retrieval_filters"] = retrieval_filters
             internal_stream = graph.stream(
-                {"question": message},
-                config={"configurable": {"thread_id": conversation_id}},
+                graph_input,
+                config={
+                    "configurable": {
+                        "thread_id": thread_id or conversation_id,
+                    }
+                },
                 stream_mode=["updates"],
             )
             for mode, data in internal_stream:
+                if cancelled():
+                    return
+                if self._clock() - started_at > self._max_duration_seconds:
+                    raise StreamDeadlineExceeded
                 if mode == "updates" and isinstance(data, Mapping):
                     for node_name, update in data.items():
                         if not isinstance(update, Mapping):
@@ -81,9 +109,15 @@ class LangGraphStreamAdapter:
                                     QUERY_REWRITE_MESSAGE,
                                 )
                                 last_status = "query_rewrite"
-                            elif last_status != "web_search":
+                            elif (
+                                self._web_search_enabled
+                                and last_status != "web_search"
+                            ):
                                 yield _status("web_search", WEB_SEARCH_MESSAGE)
                                 last_status = "web_search"
+                            elif last_status != "generating":
+                                yield _status("generating", GENERATING_MESSAGE)
+                                last_status = "generating"
 
                         elif node_name == "rewrite_query":
                             yield _status("rag_search", RAG_SEARCH_MESSAGE)
@@ -101,13 +135,28 @@ class LangGraphStreamAdapter:
                 raise RuntimeError("graph stream ended without a terminal result")
 
             answer, _source, sources = final_result
+            if cancelled():
+                return
             if last_status != "generating":
                 yield _status("generating", GENERATING_MESSAGE)
             yield StreamEvent("sources", {"sources": sources})
             for token in ANSWER_CHUNK_PATTERN.findall(answer):
+                if cancelled():
+                    return
+                if self._clock() - started_at > self._max_duration_seconds:
+                    raise StreamDeadlineExceeded
                 yield StreamEvent("token", {"text": token})
 
             yield StreamEvent("done", {})
+        except StreamDeadlineExceeded:
+            logger.warning("RAG stream deadline exceeded")
+            yield StreamEvent(
+                "error",
+                {
+                    "code": "stream_timeout",
+                    "message": PUBLIC_TIMEOUT_MESSAGE,
+                },
+            )
         except Exception as error:
             logger.error("RAG stream failed: %s", type(error).__name__)
             yield StreamEvent(
@@ -117,6 +166,14 @@ class LangGraphStreamAdapter:
                     "message": PUBLIC_ERROR_MESSAGE,
                 },
             )
+        finally:
+            close = getattr(internal_stream, "close", None)
+            if callable(close):
+                close()
+
+
+class StreamDeadlineExceeded(TimeoutError):
+    pass
 
 
 def _status(stage: str, message: str) -> StreamEvent:

@@ -190,6 +190,7 @@ def test_linear_graph_answers_from_retrieved_documents() -> None:
         ("grade_rag", "generate_answer"),
         ("grade_rag", "rewrite_query"),
         ("grade_rag", "search_web"),
+        ("grade_rag", "no_answer"),
         ("rewrite_query", "retrieve_rag"),
         ("search_web", "grade_web"),
         ("grade_web", "generate_answer"),
@@ -229,6 +230,33 @@ def test_linear_graph_fails_closed_when_retrieval_is_empty() -> None:
         "grade:Pergunta sem cobertura:",
         "web:Pergunta sem cobertura",
         "web_grade:Pergunta sem cobertura:",
+    ]
+
+
+def test_graph_skips_web_fallback_when_it_is_disabled() -> None:
+    events: list[str] = []
+    graph = build_rag_graph(
+        retriever=RecordingRetriever(events, []),
+        grader=RecordingGrader(events, relevant=False),
+        query_preparer=IdentityQueryPreparer(),
+        query_rewriter=RewriterThatMustNotRun(),
+        web_search=WebFallbackThatMustNotRun(),
+        web_grader=WebGraderThatMustNotRun(),
+        answer_generator=LangChainAnswerGenerator(ModelThatMustNotRun()),
+        max_rag_attempts=1,
+        web_search_enabled=False,
+    )
+
+    result = graph.invoke({"question": "Pergunta sem cobertura"})
+
+    assert result == {
+        "answer": NO_CONTEXT_ANSWER,
+        "source": "none",
+        "sources": [],
+    }
+    assert events == [
+        "retrieve:Pergunta sem cobertura",
+        "grade:Pergunta sem cobertura:",
     ]
 
 

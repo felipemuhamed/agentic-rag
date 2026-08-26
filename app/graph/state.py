@@ -7,12 +7,14 @@ from app.knowledge.retrieval.models import (
     RetrievalDiagnostics,
     RetrievedDocument,
 )
+from app.knowledge.models import MetadataValue
 from app.sources.models import PublicSource
 from app.websearch.models import WebSearchResult
 
 
 class RagInput(TypedDict):
     question: str
+    retrieval_filters: NotRequired[dict[str, MetadataValue]]
 
 
 class RagOutput(TypedDict):
@@ -26,6 +28,7 @@ class RagState(TypedDict):
     question: str
     prepared_query: NotRequired[str]
     search_query: NotRequired[str]
+    retrieval_filters: NotRequired[dict[str, MetadataValue]]
     retrieval_attempts: NotRequired[int]
     documents: NotRequired[list[RetrievedDocument]]
     retrieval_diagnostics: NotRequired[RetrievalDiagnostics]

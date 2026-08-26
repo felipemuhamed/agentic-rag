@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,11 +12,15 @@ class Settings(BaseSettings):
 
     app_name: str = "Agentic RAG"
     app_version: str = "0.1.0"
-    app_environment: str = "development"
+    app_environment: Literal["development", "test", "production"] = "development"
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
+    json_logs: bool = False
 
     # Configuration used by later roadmap stages. Defaults keep the API
     # bootstrap independent from model and vector-store services.
     llm_model: str = ""
+    llm_timeout_seconds: float = Field(default=60.0, gt=0)
+    llm_max_attempts: int = Field(default=3, ge=1, le=5)
 
     embedding_model: str = "BAAI/bge-m3"
     embedding_device: str | None = None
@@ -43,6 +47,21 @@ class Settings(BaseSettings):
 
     max_rag_attempts: int = Field(default=2, ge=1)
 
+    checkpointer_mode: Literal["memory", "sqlite"] = "memory"
+    checkpointer_path: str = "./data/checkpoints.sqlite"
+
+    auth_enabled: bool = False
+    api_key_policies: SecretStr = SecretStr("")
+    rate_limit_enabled: bool = False
+    rate_limit_requests: int = Field(default=60, ge=1)
+    rate_limit_window_seconds: float = Field(default=60.0, gt=0)
+    max_concurrent_streams: int = Field(default=4, ge=1)
+
+    metrics_enabled: bool = True
+    metrics_api_key: SecretStr = SecretStr("")
+    stream_max_duration_seconds: float = Field(default=120.0, gt=0)
+
+    web_search_enabled: bool = False
     web_search_provider: Literal["tavily"] = "tavily"
     web_search_max_results: int = Field(default=5, ge=1, le=20)
     web_search_depth: Literal[
@@ -52,8 +71,39 @@ class Settings(BaseSettings):
         "ultra-fast",
     ] = "basic"
     web_search_timeout_seconds: float = Field(default=10.0, gt=0)
-    tavily_api_key: str = ""
+    tavily_api_key: SecretStr = SecretStr("")
     tavily_base_url: str = "https://api.tavily.com"
+    external_max_attempts: int = Field(default=3, ge=1, le=5)
+    external_backoff_seconds: float = Field(default=0.25, ge=0, le=10)
+    circuit_failure_threshold: int = Field(default=5, ge=1)
+    circuit_reset_seconds: float = Field(default=30.0, gt=0)
+
+    knowledge_tenant_id: str = ""
+
+    @model_validator(mode="after")
+    def validate_production_controls(self) -> "Settings":
+        if self.checkpointer_mode == "sqlite" and not self.checkpointer_path.strip():
+            raise ValueError("CHECKPOINTER_PATH must not be blank in sqlite mode")
+        if (
+            self.web_search_enabled
+            and not self.tavily_api_key.get_secret_value().strip()
+        ):
+            raise ValueError(
+                "TAVILY_API_KEY must be configured when WEB_SEARCH_ENABLED=true"
+            )
+        if self.app_environment != "production":
+            return self
+        if self.checkpointer_mode == "memory":
+            raise ValueError("production requires a durable checkpointer")
+        if not self.auth_enabled or not self.api_key_policies.get_secret_value().strip():
+            raise ValueError("production requires API key authentication policies")
+        if not self.rate_limit_enabled:
+            raise ValueError("production requires rate limiting")
+        if not self.json_logs:
+            raise ValueError("production requires JSON logs")
+        if self.metrics_enabled and not self.metrics_api_key.get_secret_value().strip():
+            raise ValueError("production metrics require METRICS_API_KEY")
+        return self
 
 
 settings = Settings()

@@ -33,13 +33,15 @@ Etapa 7 (streaming SSE): implementada. `POST /chat/stream` traduz os eventos do
 LangGraph para o protocolo publico `status`, `sources`, `token`, `done` e
 `error`, transmitindo tokens somente da resposta final.
 
-Etapa 8 (threads e memoria): implementada. `conversationId` e usado como
-`configurable.thread_id`; um checkpointer em memoria isola conversas e o
-historico serve apenas para transformar follow-ups em consultas autocontidas.
+Etapa 8 (threads e memoria): implementada. `conversationId` identifica a
+conversa; o historico serve apenas para transformar follow-ups em consultas
+autocontidas. Na API, a identidade autenticada e o tenant tambem isolam o
+thread.
 
 Etapa 9 (fallback web): implementada. Depois de esgotar o RAG interno, o grafo
-consulta um `WebSearchProvider` substituivel, avalia a evidencia externa com um
-grader proprio e so entao responde com `source=web` ou termina em `no_answer`.
+consulta um `WebSearchProvider` substituivel quando `WEB_SEARCH_ENABLED=true`,
+avalia a evidencia externa com um grader proprio e so entao responde com
+`source=web` ou termina em `no_answer`.
 
 Etapa 10 (citacoes e proveniencia): implementada. Evidencias RAG e web sao
 normalizadas em fontes publicas numeradas; toda resposta grounded precisa citar
@@ -49,6 +51,11 @@ Etapa 11 (avaliacao reproduzivel): implementada. Um dataset e corpus
 versionados alimentam Recall@K, MRR e metricas deterministicas de relevancia,
 grounding e citacoes; relatorios registram configuracao, latencia, tokens e
 custo para comparacoes controladas.
+
+Etapa 12 (hardening de producao): implementada. Inclui checkpointer SQLite
+duravel, timeouts/retries/circuit breaker, cancelamento e deadline de streams,
+API keys com isolamento por tenant, rate limit, logs JSON, metricas Prometheus
+e container com privilegios reduzidos.
 
 ## Requisitos
 
@@ -60,8 +67,7 @@ custo para comparacoes controladas.
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e '.[knowledge,rag,web,dev]'
-# Exemplo de adapter; troque pelo pacote do provider escolhido.
-python -m pip install 'langchain-openai>=1.5,<2'
+python -m pip install 'langchain-openrouter==0.2.8'
 cp .env.example .env
 ```
 
@@ -71,9 +77,10 @@ cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
-A verificacao de saude fica disponivel em `http://127.0.0.1:8000/health`.
+A verificacao de liveness fica em `http://127.0.0.1:8000/health`; readiness fica
+em `/ready` e metricas em `/metrics`.
 
-O endpoint de chat recebe `conversationId` e `message`:
+Em desenvolvimento, o endpoint de chat recebe `conversationId` e `message`:
 
 ```bash
 curl -N http://127.0.0.1:8000/chat/stream \
@@ -81,11 +88,15 @@ curl -N http://127.0.0.1:8000/chat/stream \
   -d '{"conversationId":"demo-1","message":"Como renovar o token?"}'
 ```
 
-Reutilizar o mesmo `conversationId` mantem o contexto durante a vida do processo
-da API. IDs diferentes nao compartilham mensagens.
+Com o modo SQLite da configuracao de exemplo, reutilizar o mesmo
+`conversationId` mantem o contexto inclusive depois de reiniciar a API. Em
+producao, envie tambem `tenantId` e `X-API-Key`; o thread passa a ser derivado
+do principal, tenant e ID da conversa.
 
-O fallback concreto usa Tavily. Defina `TAVILY_API_KEY` para permitir buscas
-externas; a chave so e exigida quando o RAG interno for insuficiente.
+O fallback concreto usa Tavily e fica desativado por padrao. Para permitir
+buscas externas, defina `WEB_SEARCH_ENABLED=true` e `TAVILY_API_KEY`. Sem o
+fallback, evidencia interna insuficiente termina de forma segura em
+`source=none`.
 
 ## Executar com Docker Compose
 
@@ -96,7 +107,7 @@ cp .env.example .env
 docker compose build api
 docker compose up -d api
 docker compose ps
-curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/ready
 curl http://127.0.0.1:8001/api/v2/healthcheck
 ```
 
@@ -123,19 +134,20 @@ Depois de ingerir os documentos, o retriever pode ser executado isoladamente:
 docker compose run --rm retrieve "Como renovar um access token?"
 ```
 
-Para executar o RAG completo, configure `LLM_MODEL`, as credenciais exigidas
-pelo provider de LLM e `TAVILY_API_KEY` no `.env`. A imagem usa
-`langchain-openai==1.5.1` por padrao; o build arg `LLM_PROVIDER_PACKAGE` permite
-substituir esse adapter:
+Para executar o RAG completo, configure `LLM_MODEL` e as credenciais exigidas
+pelo provider de LLM no `.env`. O fallback Tavily e opcional e requer
+`WEB_SEARCH_ENABLED=true` e `TAVILY_API_KEY`. A imagem usa
+`langchain-openrouter==0.2.8` por padrao; o build arg
+`LLM_PROVIDER_PACKAGE` permite substituir esse adapter:
 
 ```bash
 docker compose build rag
 docker compose run --rm rag "Como renovar um access token?"
 ```
 
-A base do servidor Chroma e o cache dos modelos ficam em volumes nomeados.
-`docker compose down` os preserva; `docker compose down -v` tambem os remove e
-apaga o conhecimento indexado. Consulte
+A base do servidor Chroma, os checkpoints e o cache dos modelos ficam em
+volumes nomeados. `docker compose down` os preserva; `docker compose down -v`
+tambem os remove e apaga o conhecimento indexado e os threads. Consulte
 [`docs/containers.md`](docs/containers.md) para os detalhes.
 
 ## Testar
@@ -146,6 +158,8 @@ pytest
 
 O plano de entregas e os gates entre iteracoes estao em
 [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md).
+Os controles e o checklist de deploy estao em
+[`docs/production.md`](docs/production.md).
 
 ## Executar a avaliacao
 
@@ -184,7 +198,8 @@ agentic-rag-ingest documento.md \
   --collection knowledge \
   --embedding-model BAAI/bge-m3 \
   --chunk-size 700 \
-  --chunk-overlap 100
+  --chunk-overlap 100 \
+  --tenant-id public
 ```
 
 Para inspecionar a collection programaticamente:
@@ -231,11 +246,12 @@ calibracao.
 ## Executar o RAG basico
 
 Defina o identificador `provider:model` e a credencial esperada pelo adapter.
-Por exemplo, para o adapter OpenAI:
+Por exemplo, para o OpenRouter:
 
 ```bash
-export LLM_MODEL=openai:gpt-4.1-mini
-export OPENAI_API_KEY=...
+export LLM_MODEL=openrouter:anthropic/claude-sonnet-4.6
+export OPENROUTER_API_KEY=...
+export WEB_SEARCH_ENABLED=true
 export TAVILY_API_KEY=...
 agentic-rag-ask "Como renovar um access token?"
 ```
@@ -243,8 +259,9 @@ agentic-rag-ask "Como renovar um access token?"
 A CLI consulta o Chroma configurado, classifica os chunks e so os passa ao
 modelo de resposta quando o grader considera a evidencia suficiente. Caso
 contrario, pode reescrever a consulta e tentar novamente dentro do limite
-configurado. Se o RAG continuar insuficiente, executa busca web e avalia os
-resultados antes de responder. A saida publica continua contendo `answer` e
+configurado. Se o RAG continuar insuficiente, executa a busca web apenas quando
+ela estiver habilitada e avalia os resultados antes de responder. A saida
+publica continua contendo `answer` e
 `source`, agora com valores `rag`, `web` ou `none`, e passa a incluir `sources`
 com a proveniencia citada. Os contratos estao detalhados em
 [`docs/basic-rag.md`](docs/basic-rag.md),
@@ -253,4 +270,5 @@ com a proveniencia citada. Os contratos estao detalhados em
 [`docs/streaming.md`](docs/streaming.md) e a memoria conversacional em
 [`docs/memory.md`](docs/memory.md). O fallback externo esta em
 [`docs/web-fallback.md`](docs/web-fallback.md) e o contrato de proveniencia em
-[`docs/citations.md`](docs/citations.md).
+[`docs/citations.md`](docs/citations.md). O perfil de producao esta em
+[`docs/production.md`](docs/production.md).

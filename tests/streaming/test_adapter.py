@@ -12,6 +12,7 @@ from app.sources.models import PublicSource, Source
 from app.streaming.adapter import (
     GENERATING_MESSAGE,
     PUBLIC_ERROR_MESSAGE,
+    PUBLIC_TIMEOUT_MESSAGE,
     WEB_SEARCH_MESSAGE,
     LangGraphStreamAdapter,
 )
@@ -262,6 +263,36 @@ def test_no_answer_is_sent_as_final_token_before_done() -> None:
     }
 
 
+def test_disabled_web_search_does_not_emit_external_search_status() -> None:
+    graph = FakeGraph(
+        [
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
+            ("updates", {"grade_rag": {"rag_relevant": False}}),
+            (
+                "updates",
+                {
+                    "no_answer": {
+                        "answer": "Informação insuficiente.",
+                        "source": "none",
+                        "sources": [],
+                    }
+                },
+            ),
+        ]
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=1,
+        web_search_enabled=False,
+    )
+
+    events = list(adapter.stream(conversation_id="c-1", message="Pergunta"))
+
+    statuses = [event.data["stage"] for event in events if event.event == "status"]
+    assert statuses == ["rag_search", "generating"]
+    assert events[-1].event == "done"
+
+
 def test_stream_failure_ends_with_safe_error_event() -> None:
     graph = FakeGraph(
         [
@@ -453,3 +484,49 @@ def test_invented_citation_fails_before_sources_or_tokens_are_emitted() -> None:
 
     assert events[-1].event == "error"
     assert all(event.event not in {"sources", "token", "done"} for event in events)
+
+
+def test_cancellation_stops_graph_without_done_or_error() -> None:
+    cancelled = [False]
+
+    class CancellingGraph(FakeGraph):
+        def stream(self, input, *, config, stream_mode):
+            yield ("updates", {"retrieve_rag": {"retrieval_attempts": 1}})
+            cancelled[0] = True
+            yield ("updates", {"grade_rag": {"rag_relevant": True}})
+
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: CancellingGraph([]),
+        max_rag_attempts=1,
+    )
+
+    events = list(
+        adapter.stream(
+            conversation_id="c-cancel",
+            message="Question",
+            is_cancelled=lambda: cancelled[0],
+        )
+    )
+
+    assert event_names(events) == ["status"]
+
+
+def test_stream_deadline_returns_specific_safe_error() -> None:
+    clock_values = iter([0.0, 2.0])
+    graph = FakeGraph(
+        [("updates", {"retrieve_rag": {"retrieval_attempts": 1}})]
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=1,
+        max_duration_seconds=1.0,
+        clock=lambda: next(clock_values),
+    )
+
+    events = list(adapter.stream(conversation_id="c-timeout", message="Question"))
+
+    assert events[-1].event == "error"
+    assert events[-1].data == {
+        "code": "stream_timeout",
+        "message": PUBLIC_TIMEOUT_MESSAGE,
+    }

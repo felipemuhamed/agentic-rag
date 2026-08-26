@@ -19,15 +19,15 @@ seguinte nao deve ser implementada antes disso.
 | 9 | Fallback web por interface substituivel | Web so executa apos falha interna; evidencia insuficiente resulta em `no_answer` | Implementada; ambos os gates e metadata de URL cobertos por testes |
 | 10 | Citacoes e proveniencia normalizadas | Toda citacao resolve para uma fonte real com metadata preservada | Implementada; validacao fechada e contrato SSE cobertos por testes |
 | 11 | Dataset e avaliacao reproduzivel | Baseline versionado com Recall@K e MRR ou nDCG, alem de grounding | Implementada; baseline offline e runner live cobertos por testes |
-| 12 | Hardening de producao | Persistencia duravel, resiliencia, seguranca, observabilidade e deploy validados | Pendente |
+| 12 | Hardening de producao | Persistencia duravel, resiliencia, seguranca, observabilidade e deploy validados | Implementada; controles e falhas principais cobertos por testes |
 
 ## Iteracao intercalada: containers de desenvolvimento
 
 Apos a Etapa 2, foi solicitada uma base de containerizacao antes do retriever.
 Ela inclui targets separados para API, knowledge e RAG, usuario sem
 privilegios, servidor Chroma em container, readiness HTTP e volumes para
-dados/cache de modelos. Esta entrega facilita o desenvolvimento reproduzivel,
-mas nao antecipa os controles de producao da Etapa 12.
+dados/cache de modelos. Na Etapa 12, a mesma base recebeu persistencia de
+checkpoints e reducao adicional de privilegios.
 
 ## Ciclo de cada iteracao
 
@@ -78,16 +78,18 @@ thread.
 
 ## Etapa 8 implementada
 
-O adapter mapeia `conversationId` diretamente para `configurable.thread_id` e o
-grafo de desenvolvimento usa `InMemorySaver`. O estado persistido acumula pares
-de mensagens apenas ao terminar uma resposta. `prepare_query` usa esse
+O adapter mapeia a identidade da conversa para `configurable.thread_id`. Em
+desenvolvimento o grafo pode usar `InMemorySaver`; a API e o Compose usam o
+checkpointer configurado. O estado acumula pares de mensagens apenas ao
+terminar uma resposta. `prepare_query` usa esse
 historico para resolver referencias e produz `prepared_query`; retrieval,
 grader, rewrite e geracao recebem a consulta autocontida, nunca o historico
 bruto. Testes comprovam que "E no Keycloak?" herda o assunto OAuth apenas no
 mesmo thread e que outro ID inicia sem contexto.
 
-Esse checkpointer existe somente no processo da API: reinicio e replicas nao
-compartilham memoria. Persistencia duravel continua reservada ao hardening.
+Na Etapa 12, o modo SQLite passou a preservar threads entre reinicios em uma
+instancia. O thread da API e derivado do principal, tenant e `conversationId`,
+sem persistir o ID publico diretamente.
 
 ## Etapa 9 implementada
 
@@ -129,7 +131,27 @@ e destaca configuracoes alteradas. Um baseline offline, explicitamente separado
 dos providers de producao, permite reproduzir o gate sem Chroma ou credenciais;
 o mesmo comando avalia a collection e os modelos reais quando configurados.
 
-## Proxima iteracao proposta: Etapa 12
+## Etapa 12 implementada
 
-Adicionar persistencia duravel, resiliencia, seguranca, observabilidade e
-controles de deploy sem alterar os contratos de dominio aceitos.
+O runtime passou a possuir um checkpointer SQLite lazy com WAL e volume
+dedicado, fechado no shutdown da aplicacao. A configuracao de producao exige
+autenticacao, politicas de tenant, rate limit, logs JSON, persistencia e
+protecao de metricas. API keys sao mantidas como secrets e comparadas por
+digest; o thread e derivado da identidade e o retrieval filtra a metadata
+`tenant_id`.
+
+Chamadas de LLM receberam timeout e retries limitados. A busca web acrescenta
+backoff exponencial e circuit breaker para falhas transientes. Streams liberam
+recursos ao desconectar, respeitam deadline total e retornam erros publicos sem
+detalhes internos. `/ready`, `/metrics`, `X-Request-ID` e metricas de HTTP,
+streams, autenticacao e rate limit formam a base do SLO operacional.
+
+O container da API usa filesystem raiz somente leitura, usuario sem privilegio,
+capabilities removidas, init, shutdown gracioso e volume de checkpoints. SQLite
+e o rate limiter em memoria limitam esta entrega a uma replica; escala
+horizontal requer checkpointer e quotas compartilhados. O runbook completo
+esta em [`production.md`](production.md).
+
+Com esta entrega, as 12 etapas da arquitetura v1 foram implementadas. As
+proximas iteracoes devem ser dirigidas pelos resultados do corpus real, SLOs de
+producao e requisitos de escala, e nao por novos ramos antecipados no grafo.

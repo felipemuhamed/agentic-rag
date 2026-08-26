@@ -10,15 +10,17 @@ START -> prepare_query -> retrieve_rag -> grade_rag
                                           | relevant=true  -> generate_answer -> END
                                           | false e ha budget -> rewrite_query
                                           |                      -> retrieve_rag
-                                          | false no limite  -> search_web
+                                          | false no limite e web ativa -> search_web
                                                                  -> grade_web
                                                                     | true -> generate_answer
                                                                     | false -> no_answer -> END
+                                          | false no limite e web inativa -> no_answer -> END
 ```
 
 ## Estado e contratos
 
-A entrada do grafo contem somente `question`; a saida contem `answer` e
+A entrada do grafo contem `question` e pode incluir `retrieval_filters`; a
+saida contem `answer` e
 `source`, cujo valor e `rag`, `web` ou `none`, e `sources`, a lista publica de
 proveniencia. O estado interno adiciona `messages`, `prepared_query`,
 `search_query`, `retrieval_attempts`, documentos recuperados, diagnosticos do
@@ -56,13 +58,14 @@ limite, [`web-fallback.md`](web-fallback.md) descreve o segundo gate.
 
 ## Execucao
 
-Instale o extra do grafo e o adapter do provider escolhido. Exemplo com OpenAI:
+Instale o extra do grafo e o adapter padrao do OpenRouter:
 
 ```bash
 python -m pip install -e '.[knowledge,rag,web]'
-python -m pip install 'langchain-openai>=1.5,<2'
-export LLM_MODEL=openai:gpt-4.1-mini
-export OPENAI_API_KEY=...
+python -m pip install 'langchain-openrouter==0.2.8'
+export LLM_MODEL=openrouter:anthropic/claude-sonnet-4.6
+export OPENROUTER_API_KEY=...
+export WEB_SEARCH_ENABLED=true
 export TAVILY_API_KEY=...
 agentic-rag-ask "Como renovar um access token?"
 ```
@@ -85,9 +88,9 @@ anteriores somente para converter uma pergunta dependente em
 `prepared_query`. O historico bruto nao e enviado ao retriever, grader,
 rewriter nem gerador. Consulte [`memory.md`](memory.md).
 
-## Limites atuais
+## Fronteira operacional
 
-O fluxo ainda nao possui persistencia conversacional duravel. A avaliacao
-reproduzivel da Etapa 11 esta descrita em `evaluation.md`; o hardening
-operacional pertence a Etapa 12. O
-streaming fica em um adapter externo ao grafo.
+O streaming permanece em um adapter externo ao grafo. Persistencia, acesso por
+tenant, resiliencia, metricas e deploy sao responsabilidades da camada de
+runtime descrita em [`production.md`](production.md). A avaliacao reproduzivel
+da Etapa 11 permanece descrita em [`evaluation.md`](evaluation.md).

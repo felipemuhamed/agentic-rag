@@ -6,6 +6,7 @@ from typing import Sequence
 from app.knowledge.embeddings import SentenceTransformerEmbeddingProvider
 from app.knowledge.ingestion.chunker import TextChunker
 from app.knowledge.ingestion.loaders import TextFileLoader
+from app.knowledge.ingestion.metadata import FileMetadataExtractor
 from app.knowledge.ingestion.normalizer import TextNormalizer
 from app.knowledge.ingestion.service import IngestionService
 from app.knowledge.vectorstore.factory import create_chroma_vector_store
@@ -35,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--collection", default=settings.chroma_collection)
     parser.add_argument("--embedding-model", default=settings.embedding_model)
     parser.add_argument("--device", default=settings.embedding_device)
+    parser.add_argument("--tenant-id", default=settings.knowledge_tenant_id)
     parser.add_argument("--chunk-size", type=int, default=settings.ingestion_chunk_size)
     parser.add_argument(
         "--chunk-overlap",
@@ -58,7 +60,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     service = IngestionService(
-        loader=TextFileLoader(),
+        loader=TextFileLoader(
+            FileMetadataExtractor(tenant_id=args.tenant_id)
+        ),
         normalizer=TextNormalizer(),
         chunker=TextChunker(args.chunk_size, args.chunk_overlap),
         embedding_provider=SentenceTransformerEmbeddingProvider(

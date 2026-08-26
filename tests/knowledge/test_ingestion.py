@@ -2,6 +2,7 @@ from pathlib import Path
 
 from app.knowledge.ingestion.chunker import TextChunker
 from app.knowledge.ingestion.loaders import TextFileLoader
+from app.knowledge.ingestion.metadata import FileMetadataExtractor
 from app.knowledge.ingestion.normalizer import TextNormalizer
 from app.knowledge.ingestion.service import EmptyDocumentError, IngestionService
 from app.knowledge.vectorstore.chroma import ChromaVectorStore
@@ -83,3 +84,32 @@ def test_empty_document_is_rejected_before_embedding(tmp_path: Path) -> None:
         raise AssertionError("Expected EmptyDocumentError")
 
     assert vector_store.count() == 0
+
+
+def test_ingestion_adds_tenant_metadata_when_configured(tmp_path: Path) -> None:
+    path = tmp_path / "tenant.md"
+    path.write_text("# Tenant\n\nScoped content.", encoding="utf-8")
+    vector_store = ChromaVectorStore(tmp_path / "tenant-chroma", "tenant_test")
+    service = IngestionService(
+        loader=TextFileLoader(FileMetadataExtractor(tenant_id="tenant-a")),
+        normalizer=TextNormalizer(),
+        chunker=TextChunker(chunk_size=90, chunk_overlap=15),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        vector_store=vector_store,
+    )
+
+    result = service.ingest_path(path)
+    records = vector_store.get_document_chunks(result.document_id)
+
+    second_service = IngestionService(
+        loader=TextFileLoader(FileMetadataExtractor(tenant_id="tenant-b")),
+        normalizer=TextNormalizer(),
+        chunker=TextChunker(chunk_size=90, chunk_overlap=15),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        vector_store=vector_store,
+    )
+    second_result = second_service.ingest_path(path)
+
+    assert records[0]["metadata"]["tenant_id"] == "tenant-a"
+    assert result.document_id != second_result.document_id
+    assert vector_store.count() == 2

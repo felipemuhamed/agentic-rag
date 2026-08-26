@@ -1,16 +1,95 @@
-from fastapi import FastAPI
+import logging
+import re
+from contextlib import asynccontextmanager
+from time import monotonic
+from uuid import uuid4
+
+from fastapi import FastAPI, Request
 
 from app.api.chat import router as chat_router
 from app.api.health import router as health_router
-from app.settings import settings
+from app.api.operations import router as operations_router
+from app.observability.logging import (
+    bind_request_id,
+    configure_logging,
+    reset_request_id,
+)
+from app.observability.metrics import MetricsRegistry
+from app.runtime import RagRuntime
+from app.security.access import AccessPolicy
+from app.security.rate_limit import RateLimiter
+from app.settings import Settings, settings
 
 
-def create_app() -> FastAPI:
+logger = logging.getLogger(__name__)
+REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+
+
+def create_app(
+    config: Settings = settings,
+    *,
+    runtime: RagRuntime | None = None,
+    metrics: MetricsRegistry | None = None,
+) -> FastAPI:
+    configure_logging(level=config.log_level, json_logs=config.json_logs)
+    rag_runtime = runtime or RagRuntime(config)
+
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        yield
+        rag_runtime.close()
+
     application = FastAPI(
-        title=settings.app_name,
-        version=settings.app_version,
+        title=config.app_name,
+        version=config.app_version,
+        lifespan=lifespan,
     )
+    application.state.config = config
+    application.state.rag_runtime = rag_runtime
+    application.state.metrics = metrics or MetricsRegistry()
+    application.state.access_policy = AccessPolicy.from_settings(config)
+    application.state.rate_limiter = RateLimiter(
+        enabled=config.rate_limit_enabled,
+        requests=config.rate_limit_requests,
+        window_seconds=config.rate_limit_window_seconds,
+        max_concurrent=config.max_concurrent_streams,
+    )
+
+    @application.middleware("http")
+    async def observe_request(request: Request, call_next):
+        supplied_request_id = request.headers.get("X-Request-ID", "")
+        request_id = (
+            supplied_request_id
+            if REQUEST_ID_PATTERN.fullmatch(supplied_request_id)
+            else str(uuid4())
+        )
+        token = bind_request_id(request_id)
+        started_at = monotonic()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            response.headers["X-Request-ID"] = request_id
+            return response
+        finally:
+            duration = monotonic() - started_at
+            application.state.metrics.observe_http(
+                status_code=status_code,
+                duration_seconds=duration,
+            )
+            logger.info(
+                "HTTP request completed",
+                extra={
+                    "http_method": request.method,
+                    "http_path": request.url.path,
+                    "status_code": status_code,
+                    "duration_ms": round(duration * 1000, 3),
+                },
+            )
+            reset_request_id(token)
+
     application.include_router(health_router)
+    application.include_router(operations_router)
     application.include_router(chat_router)
     return application
 

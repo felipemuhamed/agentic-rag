@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "name": "agentic-rag-project-docs",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Perguntas reais de manutencao sobre os contratos versionados do projeto.",
   "corpus": [
     "docs/citations.md",
@@ -32,11 +32,11 @@
     },
     {
       "id": "conversation-isolation",
-      "question": "Como as conversas sao isoladas e qual e a limitacao atual da memoria?",
+      "question": "Como as conversas autenticadas sao isoladas e qual e a limitacao do checkpointer SQLite?",
       "expected_documents": [
         {"source": "docs/memory.md"}
       ],
-      "reference_answer": "O conversationId e mapeado para o thread_id do LangGraph; o checkpointer em memoria isola as threads, mas os dados se perdem ao reiniciar o processo e nao sao compartilhados entre replicas.",
+      "reference_answer": "O thread_id combina principal, tenant e conversationId por hash, isolando identidades e preservando o estado entre reinicios; o SQLite atende uma instancia e nao e compartilhado por replicas em hosts diferentes.",
       "tags": ["memory", "threads"]
     },
     {

@@ -22,6 +22,7 @@ def build_rag_graph(
     web_grader: WebGrader,
     answer_generator: AnswerGenerator,
     max_rag_attempts: int,
+    web_search_enabled: bool = True,
     checkpointer: Any = None,
 ):
     nodes = RagNodes(
@@ -33,6 +34,7 @@ def build_rag_graph(
         web_grader=web_grader,
         answer_generator=answer_generator,
         max_rag_attempts=max_rag_attempts,
+        web_search_enabled=web_search_enabled,
     )
     builder = StateGraph(
         RagState,
@@ -57,6 +59,7 @@ def build_rag_graph(
             "answer": "generate_answer",
             "rewrite": "rewrite_query",
             "web": "search_web",
+            "no_answer": "no_answer",
         },
     )
     builder.add_edge("rewrite_query", "retrieve_rag")

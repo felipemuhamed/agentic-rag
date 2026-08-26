@@ -12,25 +12,59 @@ from app.settings import Settings, settings
 from app.websearch.factory import create_web_search_provider
 
 
-def create_rag_graph(config: Settings = settings):
-    model = create_chat_model(config.llm_model)
+def create_rag_graph(
+    config: Settings = settings,
+    *,
+    checkpointer=None,
+):
+    model = create_chat_model(
+        config.llm_model,
+        timeout=config.llm_timeout_seconds,
+        # Retries are owned by the node-level runnables below. Disabling the
+        # provider retry loop prevents multiplicative attempts and backoffs.
+        max_retries=0,
+    )
     answer_generator = LangChainAnswerGenerator(
-        model.with_config({"tags": ["rag-answer"]})
+        _with_retry(
+            model.with_config({"tags": ["rag-answer"]}),
+            config.llm_max_attempts,
+        )
     )
     query_preparer = LangChainQueryPreparer(
-        model.with_config({"tags": ["rag-prepare", "nostream"]})
+        _with_retry(
+            model.with_config({"tags": ["rag-prepare", "nostream"]}),
+            config.llm_max_attempts,
+        )
     )
     query_rewriter = LangChainQueryRewriter(
-        model.with_config({"tags": ["rag-rewrite", "nostream"]})
+        _with_retry(
+            model.with_config({"tags": ["rag-rewrite", "nostream"]}),
+            config.llm_max_attempts,
+        )
     )
     return build_rag_graph(
         retriever=create_knowledge_retriever(config),
-        grader=LangChainRagGrader(model),
+        grader=LangChainRagGrader(
+            model,
+            max_attempts=config.llm_max_attempts,
+        ),
         query_preparer=query_preparer,
         query_rewriter=query_rewriter,
         web_search=create_web_search_provider(config),
-        web_grader=LangChainWebGrader(model),
+        web_grader=LangChainWebGrader(
+            model,
+            max_attempts=config.llm_max_attempts,
+        ),
         answer_generator=answer_generator,
         max_rag_attempts=config.max_rag_attempts,
-        checkpointer=InMemorySaver(),
+        web_search_enabled=config.web_search_enabled,
+        checkpointer=(
+            checkpointer if checkpointer is not None else InMemorySaver()
+        ),
     )
+
+
+def _with_retry(model, max_attempts: int):
+    if max_attempts == 1:
+        return model
+    return model.with_retry(stop_after_attempt=max_attempts)
