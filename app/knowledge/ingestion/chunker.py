@@ -43,6 +43,8 @@ class TextChunker:
                 metadata["url"] = document.url
             if document.tenant_id:
                 metadata["tenant_id"] = document.tenant_id
+            if document.equipment_id:
+                metadata["equipment_id"] = document.equipment_id
 
             chunks.append(
                 Chunk(

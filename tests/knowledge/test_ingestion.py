@@ -113,3 +113,27 @@ def test_ingestion_adds_tenant_metadata_when_configured(tmp_path: Path) -> None:
     assert records[0]["metadata"]["tenant_id"] == "tenant-a"
     assert result.document_id != second_result.document_id
     assert vector_store.count() == 2
+
+
+def test_ingestion_links_document_chunks_to_equipment(tmp_path: Path) -> None:
+    path = tmp_path / "manual.md"
+    path.write_text("# Manual\n\nProcedimento proprietário.", encoding="utf-8")
+    vector_store = ChromaVectorStore(tmp_path / "equipment", "manuals")
+    service = IngestionService(
+        loader=TextFileLoader(
+            FileMetadataExtractor(
+                tenant_id="public",
+                equipment_id="OLT-9000",
+            )
+        ),
+        normalizer=TextNormalizer(),
+        chunker=TextChunker(chunk_size=90, chunk_overlap=15),
+        embedding_provider=DeterministicEmbeddingProvider(),
+        vector_store=vector_store,
+    )
+
+    result = service.ingest_path(path)
+    records = vector_store.get_document_chunks(result.document_id)
+
+    assert records[0]["metadata"]["tenant_id"] == "public"
+    assert records[0]["metadata"]["equipment_id"] == "OLT-9000"

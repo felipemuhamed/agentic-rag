@@ -8,12 +8,16 @@ from app.knowledge.retrieval.models import (
 )
 from app.llm.rag_grader import RagGrade
 from app.llm.web_grader import WebGrade
+from app.multimodal.analyzer import ImageAnalysis
+from app.multimodal.models import ImageInput
 from app.sources.models import PublicSource, Source
 from app.streaming.adapter import (
     GENERATING_MESSAGE,
+    IMAGE_ANALYSIS_MESSAGE,
     PUBLIC_ERROR_MESSAGE,
     PUBLIC_TIMEOUT_MESSAGE,
     WEB_SEARCH_MESSAGE,
+    VISUAL_SEARCH_MESSAGE,
     LangGraphStreamAdapter,
 )
 from app.websearch.models import WebSearchResult
@@ -53,12 +57,12 @@ class FakeGraph:
     def __init__(self, events: list[object]):
         self.events = events
         self.inputs: list[
-            tuple[dict[str, str], dict[str, dict[str, str]], list[str]]
+            tuple[dict[str, object], dict[str, dict[str, str]], list[str]]
         ] = []
 
     def stream(
         self,
-        input: dict[str, str],
+        input: dict[str, object],
         *,
         config: dict[str, dict[str, str]],
         stream_mode: list[str],
@@ -149,11 +153,166 @@ def test_adapter_streams_only_final_generation_tokens() -> None:
     assert events[-1].data == {}
     assert graph.inputs == [
         (
-            {"question": "Pergunta"},
+            {
+                "question": "Pergunta",
+                "image_context": "",
+                "image_document": None,
+                "image_reference_documents": [],
+            },
             {"configurable": {"thread_id": "conversation-1"}},
             ["updates"],
         )
     ]
+
+
+class RecordingImageAnalyzer:
+    def __init__(self):
+        self.calls: list[tuple[str, list[ImageInput]]] = []
+
+    def analyze(
+        self,
+        question: str,
+        images: list[ImageInput],
+    ) -> ImageAnalysis:
+        self.calls.append((question, list(images)))
+        return ImageAnalysis(
+            summary="Painel com alarme LOS.",
+            observations=["LED LOS aceso em vermelho."],
+            visible_text=["LOS"],
+            identifiers=["ONT XPTO"],
+            uncertainties=[],
+            retrieval_query="alarme LOS ONT XPTO procedimento",
+        )
+
+
+class RecordingVisualRetriever:
+    def __init__(self, matches: list[RetrievedDocument]):
+        self.matches = matches
+        self.calls: list[tuple[list[ImageInput], object]] = []
+
+    def retrieve(self, images, *, filters=None):
+        self.calls.append((list(images), filters))
+        return self.matches
+
+
+def test_adapter_analyzes_image_before_rag_without_persisting_base64() -> None:
+    graph = FakeGraph(
+        [
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
+            ("updates", {"grade_rag": {"rag_relevant": True}}),
+            (
+                "updates",
+                {
+                    "generate_answer": {
+                        "answer": "O alarme LOS indica perda de sinal [1].",
+                        "source": "rag",
+                        "sources": [RAG_SOURCE],
+                    }
+                },
+            ),
+        ]
+    )
+    analyzer = RecordingImageAnalyzer()
+    image: ImageInput = {
+        "name": "ont.png",
+        "mime_type": "image/png",
+        "data": "BASE64-SECRET",
+        "sha256": "a" * 64,
+    }
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        image_analyzer_factory=lambda: analyzer,
+        max_rag_attempts=1,
+    )
+
+    events = list(
+        adapter.stream(
+            conversation_id="c-image",
+            message="O que significa este alarme?",
+            images=[image],
+        )
+    )
+
+    statuses = [event.data for event in events if event.event == "status"]
+    assert statuses[:2] == [
+        {"stage": "image_analysis", "message": IMAGE_ANALYSIS_MESSAGE},
+        {"stage": "rag_search", "message": "Buscando na base de conhecimento..."},
+    ]
+    assert analyzer.calls == [("O que significa este alarme?", [image])]
+    graph_input = graph.inputs[0][0]
+    assert graph_input["question"] == "O que significa este alarme?"
+    assert "Painel com alarme LOS" in str(graph_input["image_context"])
+    image_document = graph_input["image_document"]
+    assert isinstance(image_document, RetrievedDocument)
+    assert image_document.chunk_id == "user-image:aaaaaaaaaaaaaaaa"
+    assert "BASE64-SECRET" not in repr(graph_input)
+    assert events[-1].event == "done"
+
+
+def test_adapter_retrieves_proprietary_visual_references_before_rag() -> None:
+    graph = FakeGraph(
+        [
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
+            ("updates", {"grade_rag": {"rag_relevant": True}}),
+            (
+                "updates",
+                {
+                    "generate_answer": {
+                        "answer": "É o equipamento XPTO [1].",
+                        "source": "rag",
+                        "sources": [RAG_SOURCE],
+                    }
+                },
+            ),
+        ]
+    )
+    analyzer = RecordingImageAnalyzer()
+    visual_match = RetrievedDocument(
+        chunk_id="visual-ref:ref-1",
+        content="Referência do equipamento XPTO.",
+        metadata={
+            "source": "/documents/xpto-front.png",
+            "equipment_id": "XPTO-1",
+            "equipment_name": "Equipamento XPTO",
+            "visual_distance": 0.12,
+        },
+        retrieval_score=-0.12,
+        rerank_score=0.88,
+    )
+    visual_retriever = RecordingVisualRetriever([visual_match])
+    image: ImageInput = {
+        "name": "device.png",
+        "mime_type": "image/png",
+        "data": "BASE64-SECRET",
+        "sha256": "b" * 64,
+    }
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        image_analyzer_factory=lambda: analyzer,
+        visual_catalog_retriever_factory=lambda: visual_retriever,
+        max_rag_attempts=1,
+    )
+
+    events = list(
+        adapter.stream(
+            conversation_id="c-visual",
+            message="Qual é este equipamento?",
+            images=[image],
+            retrieval_filters={"tenant_id": "public"},
+        )
+    )
+
+    statuses = [event.data for event in events if event.event == "status"]
+    assert statuses[:3] == [
+        {"stage": "image_analysis", "message": IMAGE_ANALYSIS_MESSAGE},
+        {"stage": "visual_search", "message": VISUAL_SEARCH_MESSAGE},
+        {"stage": "rag_search", "message": "Buscando na base de conhecimento..."},
+    ]
+    assert visual_retriever.calls == [([image], {"tenant_id": "public"})]
+    graph_input = graph.inputs[0][0]
+    assert graph_input["image_reference_documents"] == [visual_match]
+    assert "XPTO-1" in str(graph_input["image_context"])
+    assert "BASE64-SECRET" not in repr(graph_input)
 
 
 def test_adapter_exposes_rewrite_status_without_rewrite_tokens() -> None:

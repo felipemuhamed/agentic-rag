@@ -49,6 +49,17 @@ class StubRetriever:
         return self.result
 
 
+class FilteringStubRetriever(StubRetriever):
+    def __init__(self, documents: list[RetrievedDocument]):
+        super().__init__(documents)
+        self.filters: list[object] = []
+
+    def retrieve(self, query: str, filters=None) -> RetrievalResult:
+        self.queries.append(query)
+        self.filters.append(filters)
+        return self.result
+
+
 class StubAnswerGenerator:
     def __init__(self):
         self.calls: list[
@@ -248,6 +259,98 @@ def test_prepare_query_rejects_blank_question() -> None:
         assert str(error) == "question must not be empty"
     else:
         raise AssertionError("blank question should fail")
+
+
+def test_visual_context_drives_retrieval_and_becomes_citable_evidence() -> None:
+    retriever = StubRetriever([make_document()])
+    preparer = StubQueryPreparer()
+    nodes = RagNodes(
+        retriever=retriever,
+        grader=StubGrader(),
+        query_preparer=preparer,
+        query_rewriter=StubQueryRewriter(),
+        web_search=StubWebSearch(),
+        web_grader=StubWebGrader(),
+        answer_generator=StubAnswerGenerator(),
+        max_rag_attempts=1,
+    )
+    image_document = RetrievedDocument(
+        chunk_id="user-image:abc",
+        content="Imagem mostra uma ONT com o LED LOS vermelho.",
+        metadata={
+            "source": "user-image:abc",
+            "title": "Imagem enviada: ont.png",
+        },
+        retrieval_score=1.0,
+        rerank_score=1.0,
+    )
+
+    prepared = nodes.prepare_query(
+        {
+            "question": "O que devo fazer?",
+            "image_context": '{"visible_text":["LOS"]}',
+        }
+    )
+    retrieved = nodes.retrieve_rag(
+        {
+            **prepared,
+            "question": "O que devo fazer?",
+            "image_document": image_document,
+        }
+    )
+
+    assert "O que devo fazer?" in str(prepared["prepared_query"])
+    assert "visible_text" in str(prepared["prepared_query"])
+    assert preparer.calls[0][0] == prepared["prepared_query"]
+    assert retriever.queries == [prepared["search_query"]]
+    assert retrieved["documents"] == [image_document, make_document()]
+    assert retrieved["retrieval_diagnostics"].returned_count == 2
+
+
+def test_visual_matches_filter_manuals_by_equipment_and_tenant() -> None:
+    retriever = FilteringStubRetriever([make_document()])
+    nodes = RagNodes(
+        retriever=retriever,
+        grader=StubGrader(),
+        query_preparer=StubQueryPreparer(),
+        query_rewriter=StubQueryRewriter(),
+        web_search=StubWebSearch(),
+        web_grader=StubWebGrader(),
+        answer_generator=StubAnswerGenerator(),
+        max_rag_attempts=1,
+    )
+    reference = RetrievedDocument(
+        chunk_id="visual-ref:one",
+        content="Candidato visual proprietário.",
+        metadata={
+            "source": "/references/device.png",
+            "equipment_id": "OLT-9000",
+        },
+        retrieval_score=-0.1,
+        rerank_score=0.9,
+    )
+
+    result = nodes.retrieve_rag(
+        {
+            "question": "Qual equipamento?",
+            "prepared_query": "Qual equipamento?",
+            "search_query": "equipamento da imagem",
+            "retrieval_attempts": 0,
+            "retrieval_filters": {"tenant_id": "public"},
+            "image_reference_documents": [reference],
+        }
+    )
+
+    assert retriever.filters == [
+        {
+            "$and": [
+                {"tenant_id": "public"},
+                {"equipment_id": {"$in": ["OLT-9000"]}},
+            ]
+        }
+    ]
+    assert result["documents"] == [reference, make_document()]
+    assert result["retrieval_diagnostics"].returned_count == 2
 
 
 def test_irrelevant_rag_routes_through_web_before_no_answer() -> None:

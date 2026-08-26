@@ -20,6 +20,34 @@ def test_web_search_timeout_must_be_positive() -> None:
         Settings(web_search_timeout_seconds=0, _env_file=None)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("multimodal_max_images", 0),
+        ("multimodal_max_images", 6),
+        ("multimodal_max_image_bytes", 1023),
+        ("multimodal_max_image_bytes", 20_000_001),
+    ],
+)
+def test_multimodal_limits_are_validated(field: str, value: int) -> None:
+    with pytest.raises(ValidationError):
+        Settings(**{field: value}, _env_file=None)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("visual_max_results", 0),
+        ("visual_max_results", 21),
+        ("visual_max_distance", -0.01),
+        ("visual_max_distance", 4.01),
+    ],
+)
+def test_visual_catalog_limits_are_validated(field: str, value: float) -> None:
+    with pytest.raises(ValidationError):
+        Settings(**{field: value}, _env_file=None)
+
+
 def test_web_search_requires_tavily_key_only_when_enabled() -> None:
     disabled = Settings(web_search_enabled=False, _env_file=None)
 

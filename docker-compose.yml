@@ -20,6 +20,12 @@ x-knowledge-environment: &knowledge-environment
   CHROMA_TENANT: ${CHROMA_TENANT:-default_tenant}
   CHROMA_DATABASE: ${CHROMA_DATABASE:-default_database}
   CHROMA_COLLECTION: ${CHROMA_COLLECTION:-knowledge}
+  VISUAL_CATALOG_ENABLED: ${VISUAL_CATALOG_ENABLED:-true}
+  VISUAL_COLLECTION: ${VISUAL_COLLECTION:-equipment_images}
+  VISUAL_EMBEDDING_MODEL: ${VISUAL_EMBEDDING_MODEL:-sentence-transformers/clip-ViT-B-32}
+  VISUAL_EMBEDDING_DEVICE: ${VISUAL_EMBEDDING_DEVICE:-cpu}
+  VISUAL_MAX_RESULTS: ${VISUAL_MAX_RESULTS:-3}
+  VISUAL_MAX_DISTANCE: ${VISUAL_MAX_DISTANCE:-0.8}
   INGESTION_CHUNK_SIZE: ${INGESTION_CHUNK_SIZE:-700}
   INGESTION_CHUNK_OVERLAP: ${INGESTION_CHUNK_OVERLAP:-100}
   KNOWLEDGE_TENANT_ID: ${KNOWLEDGE_TENANT_ID:-}
@@ -34,6 +40,10 @@ x-rag-environment: &rag-environment
   LLM_MODEL: ${LLM_MODEL:-}
   LLM_TIMEOUT_SECONDS: ${LLM_TIMEOUT_SECONDS:-60}
   LLM_MAX_ATTEMPTS: ${LLM_MAX_ATTEMPTS:-3}
+  VISION_MODEL: ${VISION_MODEL:-}
+  MULTIMODAL_ENABLED: ${MULTIMODAL_ENABLED:-true}
+  MULTIMODAL_MAX_IMAGES: ${MULTIMODAL_MAX_IMAGES:-1}
+  MULTIMODAL_MAX_IMAGE_BYTES: ${MULTIMODAL_MAX_IMAGE_BYTES:-5000000}
   MAX_RAG_ATTEMPTS: ${MAX_RAG_ATTEMPTS:-2}
   CHECKPOINTER_MODE: ${CHECKPOINTER_MODE:-sqlite}
   CHECKPOINTER_PATH: /data/checkpoints/checkpoints.sqlite
@@ -144,6 +154,25 @@ services:
       target: knowledge
       args:
         PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+    environment: *knowledge-environment
+    volumes:
+      - model-cache:/home/app/.cache/huggingface
+      - ./documents:/documents:ro
+    init: true
+    depends_on:
+      chroma-ready:
+        condition: service_completed_successfully
+
+  index-image:
+    profiles: [tools]
+    image: agentic-rag-knowledge:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: knowledge
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+    entrypoint: [agentic-rag-index-image]
     environment: *knowledge-environment
     volumes:
       - model-cache:/home/app/.cache/huggingface

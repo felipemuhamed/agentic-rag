@@ -48,3 +48,30 @@ def test_chroma_dense_search_returns_embeddings_and_honors_filters(
     assert [candidate.chunk_id for candidate in results] == ["oauth-1", "cooking-1"]
     assert results[0].embedding == [1.0, 0.0, 0.0]
     assert [candidate.chunk_id for candidate in filtered] == ["cooking-1"]
+
+
+def test_chroma_combines_tenant_and_equipment_filters(tmp_path: Path) -> None:
+    store = ChromaVectorStore(tmp_path / "chroma", "equipment_filter_test")
+    first = chunk("olt-1", "olt", "OLT manual", "network")
+    first.metadata.update(
+        {"tenant_id": "public", "equipment_id": "OLT-9000"}
+    )
+    second = chunk("ont-1", "ont", "ONT manual", "network")
+    second.metadata.update(
+        {"tenant_id": "public", "equipment_id": "ONT-100"}
+    )
+    store.replace_document("olt", [first], [[1.0, 0.0]])
+    store.replace_document("ont", [second], [[0.9, 0.1]])
+
+    matches = store.similarity_search(
+        [1.0, 0.0],
+        limit=2,
+        filters={
+            "$and": [
+                {"tenant_id": "public"},
+                {"equipment_id": {"$in": ["OLT-9000"]}},
+            ]
+        },
+    )
+
+    assert [candidate.chunk_id for candidate in matches] == ["olt-1"]

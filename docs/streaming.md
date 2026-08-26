@@ -14,7 +14,8 @@ X-API-Key: <chave, quando AUTH_ENABLED=true>
 {
   "conversationId": "demo-1",
   "tenantId": "public",
-  "message": "Como renovar o token?"
+  "message": "Como renovar o token?",
+  "images": []
 }
 ```
 
@@ -23,6 +24,12 @@ apenas espacos. `tenantId` e obrigatorio quando a autenticacao esta ativa. A
 mensagem aceita ate 8.000 caracteres e os IDs ate 128. Campos desconhecidos sao
 rejeitados. O thread interno combina principal, tenant e conversa, conforme
 detalhado em [`memory.md`](memory.md).
+
+`images` e opcional. Cada item usa `name`, `mimeType` e `data`, onde `data` e o
+Base64 puro, sem prefixo `data:`. PNG, JPEG, WebP e GIF sao aceitos. Quantidade
+e tamanho sao limitados por `MULTIMODAL_MAX_IMAGES` e
+`MULTIMODAL_MAX_IMAGE_BYTES`; payload invalido recebe `422` e imagem acima do
+limite recebe `413` antes de abrir o SSE.
 
 ## Eventos publicos
 
@@ -35,9 +42,11 @@ event: status
 data: {"stage":"rag_search","message":"Buscando na base de conhecimento..."}
 ```
 
-Os stages implementados sao `rag_search`, `query_rewrite`, `web_search` e
-`generating`. `web_search` so aparece depois que o limite do RAG interno e
-atingido.
+Os stages implementados sao `image_analysis`, `visual_search`, `rag_search`,
+`query_rewrite`, `web_search` e `generating`. `image_analysis` aparece quando
+ha anexo; `visual_search` compara a imagem com o catalogo proprietario antes do
+retrieval de manuais. `web_search` so aparece depois que o limite do RAG interno
+e atingido.
 
 ### `sources`
 

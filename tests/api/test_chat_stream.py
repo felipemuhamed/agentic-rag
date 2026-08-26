@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from threading import Event
 from types import SimpleNamespace
@@ -94,6 +95,7 @@ def test_chat_stream_exposes_stable_sse_contract() -> None:
     assert adapter.calls == [("conversation-1", "Como renovar o token?")]
     assert len(adapter.options[0]["thread_id"]) == 64
     assert adapter.options[0]["retrieval_filters"] is None
+    assert adapter.options[0]["images"] == []
     assert parse_sse(response.text) == [
         ("status", {"stage": "rag_search", "message": "Buscando..."}),
         (
@@ -117,6 +119,128 @@ def test_chat_stream_exposes_stable_sse_contract() -> None:
         ("token", {"text": "Resposta [1]."}),
         ("done", {}),
     ]
+
+
+def _png_base64(extra: bytes = b"") -> str:
+    return base64.b64encode(b"\x89PNG\r\n\x1a\n" + extra).decode()
+
+
+def test_chat_stream_accepts_valid_base64_image() -> None:
+    adapter = RecordingAdapter()
+    application = create_app(Settings(app_environment="test", _env_file=None))
+    application.dependency_overrides[get_rag_stream_adapter] = lambda: adapter
+
+    async def make_request() -> httpx.Response:
+        transport = httpx.ASGITransport(app=application)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            return await client.post(
+                "/chat/stream",
+                json={
+                    "conversationId": "image-1",
+                    "message": "Identifique este alarme.",
+                    "images": [
+                        {
+                            "name": "../painel.png",
+                            "mimeType": "image/png",
+                            "data": _png_base64(),
+                        }
+                    ],
+                },
+            )
+
+    response = asyncio.run(make_request())
+
+    assert response.status_code == 200
+    images = adapter.options[0]["images"]
+    assert isinstance(images, list)
+    assert images[0]["name"] == "painel.png"
+    assert images[0]["mime_type"] == "image/png"
+    assert len(images[0]["sha256"]) == 64
+
+
+def test_chat_stream_rejects_invalid_or_disabled_image_input() -> None:
+    adapter = RecordingAdapter()
+    disabled_app = create_app(
+        Settings(
+            app_environment="test",
+            multimodal_enabled=False,
+            _env_file=None,
+        )
+    )
+    disabled_app.dependency_overrides[get_rag_stream_adapter] = lambda: adapter
+    payload = {
+        "conversationId": "image-1",
+        "message": "Analise.",
+        "images": [
+            {
+                "name": "painel.png",
+                "mimeType": "image/png",
+                "data": _png_base64(),
+            }
+        ],
+    }
+
+    async def post(application, body) -> httpx.Response:
+        transport = httpx.ASGITransport(app=application)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            return await client.post("/chat/stream", json=body)
+
+    disabled_response = asyncio.run(post(disabled_app, payload))
+    assert disabled_response.status_code == 422
+
+    enabled_app = create_app(Settings(app_environment="test", _env_file=None))
+    enabled_app.dependency_overrides[get_rag_stream_adapter] = lambda: adapter
+    invalid_payload = {
+        **payload,
+        "images": [{**payload["images"][0], "data": "not-base64"}],
+    }
+    invalid_response = asyncio.run(post(enabled_app, invalid_payload))
+
+    assert invalid_response.status_code == 422
+    assert adapter.calls == []
+
+
+def test_chat_stream_rejects_image_larger_than_configured_limit() -> None:
+    config = Settings(
+        app_environment="test",
+        multimodal_max_image_bytes=1024,
+        _env_file=None,
+    )
+    adapter = RecordingAdapter()
+    application = create_app(config)
+    application.dependency_overrides[get_rag_stream_adapter] = lambda: adapter
+
+    async def make_request() -> httpx.Response:
+        transport = httpx.ASGITransport(app=application)
+        async with httpx.AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+        ) as client:
+            return await client.post(
+                "/chat/stream",
+                json={
+                    "conversationId": "image-large",
+                    "message": "Analise.",
+                    "images": [
+                        {
+                            "name": "large.png",
+                            "mimeType": "image/png",
+                            "data": _png_base64(b"x" * 1024),
+                        }
+                    ],
+                },
+            )
+
+    response = asyncio.run(make_request())
+
+    assert response.status_code == 413
+    assert adapter.calls == []
 
 
 def test_chat_stream_rejects_blank_message_before_execution() -> None:

@@ -16,7 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 knowledge = [
     "chromadb>=1.5,<2",
-    "sentence-transformers>=5.7,<6",
+    "sentence-transformers[image]>=5.7,<6",
 ]
 rag = [
     "langchain>=1.3,<2",
@@ -37,6 +37,7 @@ dev = [
 
 [project.scripts]
 agentic-rag-ingest = "app.knowledge.ingestion.cli:main"
+agentic-rag-index-image = "app.visual_catalog.cli:main"
 agentic-rag-retrieve = "app.knowledge.retrieval.cli:main"
 agentic-rag-ask = "app.graph.cli:main"
 agentic-rag-evaluate = "app.evaluation.cli:main"

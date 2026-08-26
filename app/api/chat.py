@@ -9,6 +9,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.multimodal.models import (
+    ABSOLUTE_MAX_IMAGES,
+    ChatImage,
+    ImageTooLargeError,
+    InvalidImageError,
+    validate_image_inputs,
+)
 from app.security.access import AuthenticationError, TenantAccessError
 from app.security.rate_limit import RateLimitExceeded, RateLimitLease
 from app.streaming.adapter import LangGraphStreamAdapter
@@ -34,6 +41,10 @@ class ChatStreamRequest(BaseModel):
         alias="tenantId",
         min_length=1,
         max_length=128,
+    )
+    images: list[ChatImage] = Field(
+        default_factory=list,
+        max_length=ABSOLUTE_MAX_IMAGES,
     )
 
     @field_validator("conversation_id", "message", "tenant_id")
@@ -87,6 +98,21 @@ async def stream_chat(
         metrics.auth_failed()
         raise HTTPException(status_code=403, detail="tenant access denied") from error
 
+    if payload.images and not request.app.state.config.multimodal_enabled:
+        raise HTTPException(status_code=422, detail="multimodal input is disabled")
+    try:
+        images = validate_image_inputs(
+            payload.images,
+            max_images=request.app.state.config.multimodal_max_images,
+            max_image_bytes=(
+                request.app.state.config.multimodal_max_image_bytes
+            ),
+        )
+    except ImageTooLargeError as error:
+        raise HTTPException(status_code=413, detail=str(error)) from error
+    except InvalidImageError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
     try:
         lease = request.app.state.rate_limiter.acquire(access.quota_key)
     except RateLimitExceeded as error:
@@ -103,6 +129,7 @@ async def stream_chat(
         message=payload.message,
         thread_id=access.thread_id(payload.conversation_id),
         retrieval_filters=access.retrieval_filters,
+        images=images,
         is_cancelled=cancellation.is_set,
     )
     return StreamingResponse(

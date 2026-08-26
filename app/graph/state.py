@@ -1,4 +1,4 @@
-from typing import Annotated, Literal, NotRequired, TypedDict
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
@@ -7,14 +7,16 @@ from app.knowledge.retrieval.models import (
     RetrievalDiagnostics,
     RetrievedDocument,
 )
-from app.knowledge.models import MetadataValue
 from app.sources.models import PublicSource
 from app.websearch.models import WebSearchResult
 
 
 class RagInput(TypedDict):
     question: str
-    retrieval_filters: NotRequired[dict[str, MetadataValue]]
+    retrieval_filters: NotRequired[dict[str, Any]]
+    image_context: NotRequired[str]
+    image_document: NotRequired[RetrievedDocument | None]
+    image_reference_documents: NotRequired[list[RetrievedDocument]]
 
 
 class RagOutput(TypedDict):
@@ -26,9 +28,12 @@ class RagOutput(TypedDict):
 class RagState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     question: str
+    image_context: NotRequired[str]
+    image_document: NotRequired[RetrievedDocument | None]
+    image_reference_documents: NotRequired[list[RetrievedDocument]]
     prepared_query: NotRequired[str]
     search_query: NotRequired[str]
-    retrieval_filters: NotRequired[dict[str, MetadataValue]]
+    retrieval_filters: NotRequired[dict[str, Any]]
     retrieval_attempts: NotRequired[int]
     documents: NotRequired[list[RetrievedDocument]]
     retrieval_diagnostics: NotRequired[RetrievalDiagnostics]

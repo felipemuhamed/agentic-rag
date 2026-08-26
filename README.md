@@ -57,6 +57,17 @@ duravel, timeouts/retries/circuit breaker, cancelamento e deadline de streams,
 API keys com isolamento por tenant, rate limit, logs JSON, metricas Prometheus
 e container com privilegios reduzidos.
 
+Etapa 13 (consulta multimodal): implementada. Imagens PNG, JPEG, WebP ou GIF
+podem acompanhar o prompt. Um modelo com visao extrai elementos observaveis,
+OCR e identificadores; essa evidencia alimenta o retrieval e pode ser citada na
+resposta sem persistir o Base64 no checkpointer.
+
+Etapa 14 (catalogo visual proprietario): implementada. Fotos de referencia sao
+indexadas em uma collection visual separada e vinculadas a manuais pelo
+`equipment_id`. Uma imagem do usuario recupera equipamentos semelhantes antes
+da busca textual, permitindo identificar itens que o modelo visual publico nao
+conhece.
+
 ## Requisitos
 
 - Python 3.11 ou superior
@@ -87,6 +98,31 @@ curl -N http://127.0.0.1:8000/chat/stream \
   -H 'Content-Type: application/json' \
   -d '{"conversationId":"demo-1","message":"Como renovar o token?"}'
 ```
+
+Para enviar uma imagem local junto do prompt:
+
+```bash
+IMAGE_BASE64=$(base64 -w0 ./painel.png)
+curl -N http://127.0.0.1:8000/chat/stream \
+  -H 'Accept: text/event-stream' \
+  -H 'Content-Type: application/json' \
+  --data-binary @- <<JSON
+{
+  "conversationId": "imagem-1",
+  "tenantId": "public",
+  "message": "Identifique o equipamento, os alarmes e o procedimento aplicável.",
+  "images": [{
+    "name": "painel.png",
+    "mimeType": "image/png",
+    "data": "$IMAGE_BASE64"
+  }]
+}
+JSON
+```
+
+`VISION_MODEL` pode selecionar outro modelo; vazio reutiliza `LLM_MODEL`. O
+modelo configurado precisa aceitar imagens. Limites e fluxo estao em
+[`docs/multimodal.md`](docs/multimodal.md).
 
 Com o modo SQLite da configuracao de exemplo, reutilizar o mesmo
 `conversationId` mantem o contexto inclusive depois de reiniciar a API. Em
@@ -127,6 +163,35 @@ cp caminho/guia.md documents/guia.md
 docker compose build ingest
 docker compose run --rm ingest /documents/guia.md
 ```
+
+Para equipamentos proprietarios, cadastre uma ou mais fotos de referencia e
+associe os manuais ao mesmo identificador:
+
+```bash
+cp foto-frontal.png documents/foto-frontal.png
+cp manual-olt.md documents/manual-olt.md
+
+docker compose build index-image ingest api
+docker compose run --rm index-image \
+  --equipment-id OLT-9000 \
+  --equipment-name "OLT proprietaria" \
+  --manufacturer CPQD \
+  --model X9000 \
+  --description "Chassi frontal com oito portas opticas" \
+  --tenant-id public \
+  /documents/foto-frontal.png
+
+docker compose run --rm ingest \
+  --tenant-id public \
+  --equipment-id OLT-9000 \
+  /documents/manual-olt.md
+docker compose up -d --force-recreate api
+```
+
+Cadastre fotos de diferentes angulos com o mesmo `equipment_id` para aumentar
+a cobertura. A primeira execucao baixa o modelo visual configurado. O limiar
+`VISUAL_MAX_DISTANCE` precisa ser calibrado com imagens reais; valores menores
+exigem maior similaridade.
 
 Depois de ingerir os documentos, o retriever pode ser executado isoladamente:
 
@@ -271,4 +336,5 @@ com a proveniencia citada. Os contratos estao detalhados em
 [`docs/memory.md`](docs/memory.md). O fallback externo esta em
 [`docs/web-fallback.md`](docs/web-fallback.md) e o contrato de proveniencia em
 [`docs/citations.md`](docs/citations.md). O perfil de producao esta em
-[`docs/production.md`](docs/production.md).
+[`docs/production.md`](docs/production.md) e a consulta por imagem em
+[`docs/multimodal.md`](docs/multimodal.md).

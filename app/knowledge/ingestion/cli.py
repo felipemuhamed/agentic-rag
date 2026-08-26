@@ -37,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--embedding-model", default=settings.embedding_model)
     parser.add_argument("--device", default=settings.embedding_device)
     parser.add_argument("--tenant-id", default=settings.knowledge_tenant_id)
+    parser.add_argument(
+        "--equipment-id",
+        default="",
+        help="Link every indexed document to a visual catalog equipment ID.",
+    )
     parser.add_argument("--chunk-size", type=int, default=settings.ingestion_chunk_size)
     parser.add_argument(
         "--chunk-overlap",
@@ -61,7 +66,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     service = IngestionService(
         loader=TextFileLoader(
-            FileMetadataExtractor(tenant_id=args.tenant_id)
+            FileMetadataExtractor(
+                tenant_id=args.tenant_id,
+                equipment_id=args.equipment_id,
+            )
         ),
         normalizer=TextNormalizer(),
         chunker=TextChunker(args.chunk_size, args.chunk_overlap),

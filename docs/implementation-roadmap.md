@@ -20,6 +20,8 @@ seguinte nao deve ser implementada antes disso.
 | 10 | Citacoes e proveniencia normalizadas | Toda citacao resolve para uma fonte real com metadata preservada | Implementada; validacao fechada e contrato SSE cobertos por testes |
 | 11 | Dataset e avaliacao reproduzivel | Baseline versionado com Recall@K e MRR ou nDCG, alem de grounding | Implementada; baseline offline e runner live cobertos por testes |
 | 12 | Hardening de producao | Persistencia duravel, resiliencia, seguranca, observabilidade e deploy validados | Implementada; controles e falhas principais cobertos por testes |
+| 13 | Consulta multimodal por imagem | Imagem vira evidencia visual citavel e consulta para o RAG sem persistencia do binario | Implementada; validacao, analise, retrieval e SSE cobertos por testes |
+| 14 | Catalogo visual proprietario | Imagem recupera referencias visuais e restringe manuais pelo `equipment_id` | Implementada; ingestao visual, limiar, tenant, fusao e SSE cobertos por testes |
 
 ## Iteracao intercalada: containers de desenvolvimento
 
@@ -152,6 +154,34 @@ e o rate limiter em memoria limitam esta entrega a uma replica; escala
 horizontal requer checkpointer e quotas compartilhados. O runbook completo
 esta em [`production.md`](production.md).
 
-Com esta entrega, as 12 etapas da arquitetura v1 foram implementadas. As
-proximas iteracoes devem ser dirigidas pelos resultados do corpus real, SLOs de
-producao e requisitos de escala, e nao por novos ramos antecipados no grafo.
+## Etapa 13 implementada
+
+`POST /chat/stream` aceita imagens locais em Base64 com MIME e nome. Antes de
+abrir o grafo persistente, um modelo com visao produz uma estrutura validada com
+resumo, observacoes, OCR, identificadores, incertezas e consulta de retrieval.
+O binario e descartado nesse limite; somente a analise textual entra no estado
+e no historico.
+
+A analise visual se torna um `RetrievedDocument` transitorio com identificador
+derivado do hash da imagem. Assim, pode participar do grade e receber citacao,
+enquanto a consulta enriquecida recupera manuais e procedimentos no Chroma. A
+entrega cobre imagem como consulta. O catalogo visual permanente e o vinculo
+com manuais foram acrescentados na Etapa 14.
+
+## Etapa 14 implementada
+
+Foi criada a collection Chroma `equipment_images`, separada da collection
+textual porque o espaco vetorial CLIP tem dimensao e semantica proprias. A CLI
+`agentic-rag-index-image` transforma cada foto de referencia em embedding e
+grava `equipment_id`, nome, fabricante, modelo, descricao, tenant, hash e
+origem. Varias imagens podem compartilhar o mesmo equipamento.
+
+Durante o chat, os bytes recebidos sao comparados com esse catalogo antes de
+serem descartados. Os candidatos dentro de `VISUAL_MAX_DISTANCE` entram como
+evidencias citaveis e seus IDs formam um filtro `$in` para a busca de manuais,
+combinado ao filtro de tenant. O modelo recebe candidatos e distancias como
+evidencia, sem transformar similaridade visual em certeza automatica.
+
+Com esta entrega, as 14 etapas foram implementadas. As proximas iteracoes devem
+ser dirigidas pelos resultados do corpus real, SLOs de producao e requisitos de
+escala.

@@ -2,17 +2,24 @@ import logging
 import re
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from time import monotonic
-from typing import Protocol
+from typing import Any, Protocol
 
-from app.knowledge.models import MetadataValue
+from app.multimodal.analyzer import ImageAnalyzer, image_analysis_document
+from app.multimodal.models import ImageInput
 from app.sources.citations import citation_ids, select_cited_sources
 from app.sources.models import PublicSource, Source
 from app.streaming.events import StreamEvent
+from app.visual_catalog.retrieval import (
+    VisualCatalogRetriever,
+    visual_matches_context,
+)
 
 
 logger = logging.getLogger(__name__)
 
 RAG_SEARCH_MESSAGE = "Buscando na base de conhecimento..."
+IMAGE_ANALYSIS_MESSAGE = "Analisando a imagem enviada..."
+VISUAL_SEARCH_MESSAGE = "Comparando com o catálogo visual..."
 QUERY_REWRITE_MESSAGE = "Reformulando a busca..."
 WEB_SEARCH_MESSAGE = "Buscando fontes externas..."
 GENERATING_MESSAGE = "Gerando a resposta..."
@@ -36,6 +43,10 @@ class LangGraphStreamAdapter:
         self,
         *,
         graph_factory: Callable[[], StreamableRagGraph],
+        image_analyzer_factory: Callable[[], ImageAnalyzer] | None = None,
+        visual_catalog_retriever_factory: (
+            Callable[[], VisualCatalogRetriever] | None
+        ) = None,
         max_rag_attempts: int,
         web_search_enabled: bool = True,
         max_duration_seconds: float = 120.0,
@@ -46,6 +57,10 @@ class LangGraphStreamAdapter:
         if max_duration_seconds <= 0:
             raise ValueError("max_duration_seconds must be positive")
         self._graph_factory = graph_factory
+        self._image_analyzer_factory = image_analyzer_factory
+        self._visual_catalog_retriever_factory = (
+            visual_catalog_retriever_factory
+        )
         self._max_rag_attempts = max_rag_attempts
         self._web_search_enabled = web_search_enabled
         self._max_duration_seconds = max_duration_seconds
@@ -57,21 +72,71 @@ class LangGraphStreamAdapter:
         conversation_id: str,
         message: str,
         thread_id: str | None = None,
-        retrieval_filters: dict[str, MetadataValue] | None = None,
+        retrieval_filters: dict[str, Any] | None = None,
+        images: list[ImageInput] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
     ) -> Iterator[StreamEvent]:
         started_at = self._clock()
         cancelled = is_cancelled or (lambda: False)
-        yield _status("rag_search", RAG_SEARCH_MESSAGE)
+        pending_images = list(images or [])
+        yield _status(
+            "image_analysis" if pending_images else "rag_search",
+            IMAGE_ANALYSIS_MESSAGE if pending_images else RAG_SEARCH_MESSAGE,
+        )
 
         retrieval_attempts = 0
         final_result: tuple[str, str, list[PublicSource]] | None = None
-        last_status = "rag_search"
+        last_status = "image_analysis" if pending_images else "rag_search"
 
         internal_stream: Iterable[tuple[str, object]] | None = None
         try:
+            image_context = ""
+            image_document = None
+            image_reference_documents = []
+            if pending_images:
+                if self._image_analyzer_factory is None:
+                    raise RuntimeError("multimodal analyzer is not configured")
+                analysis = self._image_analyzer_factory().analyze(
+                    message,
+                    pending_images,
+                )
+                image_context = analysis.context_text()
+                image_document = image_analysis_document(
+                    analysis,
+                    pending_images,
+                )
+                if self._visual_catalog_retriever_factory is not None:
+                    yield _status("visual_search", VISUAL_SEARCH_MESSAGE)
+                    last_status = "visual_search"
+                    image_reference_documents = (
+                        self._visual_catalog_retriever_factory().retrieve(
+                            pending_images,
+                            filters=retrieval_filters,
+                        )
+                    )
+                    if image_reference_documents:
+                        image_context = (
+                            f"{image_context}\n\n"
+                            "Candidatos recuperados do catálogo visual "
+                            "proprietário (menor distância é melhor):\n"
+                            f"{visual_matches_context(image_reference_documents)}"
+                        )
+                pending_images.clear()
+                images = None
+                if cancelled():
+                    return
+                if self._clock() - started_at > self._max_duration_seconds:
+                    raise StreamDeadlineExceeded
+                yield _status("rag_search", RAG_SEARCH_MESSAGE)
+                last_status = "rag_search"
+
             graph = self._graph_factory()
-            graph_input: dict[str, object] = {"question": message}
+            graph_input: dict[str, object] = {
+                "question": message,
+                "image_context": image_context,
+                "image_document": image_document,
+                "image_reference_documents": image_reference_documents,
+            }
             if retrieval_filters:
                 graph_input["retrieval_filters"] = retrieval_filters
             internal_stream = graph.stream(

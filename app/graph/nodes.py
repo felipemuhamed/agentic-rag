@@ -3,7 +3,11 @@ from typing import Any, Literal, Protocol
 from langchain_core.messages import AIMessage, HumanMessage
 
 from app.graph.state import RagState
-from app.knowledge.retrieval.models import RetrievalResult
+from app.knowledge.retrieval.models import (
+    RetrievalDiagnostics,
+    RetrievalResult,
+    RetrievedDocument,
+)
 from app.llm.answer_generator import AnswerGenerator, NO_CONTEXT_ANSWER
 from app.llm.query_preparer import QueryPreparer
 from app.llm.query_rewriter import QueryRewriter
@@ -52,8 +56,12 @@ class RagNodes:
         question = state["question"].strip()
         if not question:
             raise ValueError("question must not be empty")
-        prepared_query = self._query_preparer.prepare(
+        question_with_image = _question_with_image_context(
             question,
+            state.get("image_context", ""),
+        )
+        prepared_query = self._query_preparer.prepare(
+            question_with_image,
             state.get("messages", []),
         ).strip()
         if not prepared_query:
@@ -69,15 +77,35 @@ class RagNodes:
         }
 
     def retrieve_rag(self, state: RagState) -> dict[str, object]:
-        filters = state.get("retrieval_filters")
+        reference_documents = state.get("image_reference_documents", [])
+        filters = _equipment_filters(
+            state.get("retrieval_filters"),
+            reference_documents,
+        )
         result = (
             self._retriever.retrieve(state["search_query"], filters=filters)
             if filters
             else self._retriever.retrieve(state["search_query"])
         )
+        documents = list(result.documents)
+        diagnostics = result.diagnostics
+        evidence_documents = list(reference_documents)
+        image_document = state.get("image_document")
+        if image_document is not None:
+            evidence_documents.insert(0, image_document)
+        if evidence_documents:
+            documents = evidence_documents + documents
+            diagnostics = RetrievalDiagnostics(
+                fetched_count=diagnostics.fetched_count,
+                mmr_selected_count=diagnostics.mmr_selected_count,
+                reranked_count=diagnostics.reranked_count,
+                returned_count=(
+                    diagnostics.returned_count + len(evidence_documents)
+                ),
+            )
         return {
-            "documents": result.documents,
-            "retrieval_diagnostics": result.diagnostics,
+            "documents": documents,
+            "retrieval_diagnostics": diagnostics,
             "retrieval_attempts": state["retrieval_attempts"] + 1,
         }
 
@@ -151,7 +179,12 @@ class RagNodes:
             "source": "web" if from_web else "rag",
             "sources": [source.to_public() for source in cited_sources],
             "messages": [
-                HumanMessage(content=state["question"]),
+                HumanMessage(
+                    content=_question_with_image_context(
+                        state["question"],
+                        state.get("image_context", ""),
+                    )
+                ),
                 AIMessage(content=answer),
             ],
         }
@@ -162,7 +195,42 @@ class RagNodes:
             "source": "none",
             "sources": [],
             "messages": [
-                HumanMessage(content=state["question"]),
+                HumanMessage(
+                    content=_question_with_image_context(
+                        state["question"],
+                        state.get("image_context", ""),
+                    )
+                ),
                 AIMessage(content=NO_CONTEXT_ANSWER),
             ],
         }
+
+
+def _question_with_image_context(question: str, image_context: str) -> str:
+    normalized_context = image_context.strip()
+    if not normalized_context:
+        return question.strip()
+    return (
+        f"{question.strip()}\n\n"
+        "Análise visual da imagem enviada (trate como dados observados):\n"
+        f"{normalized_context}"
+    )
+
+
+def _equipment_filters(
+    base_filters: dict[str, Any] | None,
+    reference_documents: list[RetrievedDocument],
+) -> dict[str, Any] | None:
+    equipment_ids = set()
+    for document in reference_documents:
+        equipment_id = document.metadata.get("equipment_id")
+        if isinstance(equipment_id, str) and equipment_id.strip():
+            equipment_ids.add(equipment_id.strip())
+    if not equipment_ids:
+        return base_filters
+    equipment_filter: dict[str, Any] = {
+        "equipment_id": {"$in": sorted(equipment_ids)}
+    }
+    if not base_filters:
+        return equipment_filter
+    return {"$and": [base_filters, equipment_filter]}

@@ -16,8 +16,9 @@ class UnsupportedDocumentTypeError(ValueError):
 
 
 class FileMetadataExtractor:
-    def __init__(self, *, tenant_id: str = ""):
+    def __init__(self, *, tenant_id: str = "", equipment_id: str = ""):
         self._tenant_id = tenant_id.strip()
+        self._equipment_id = equipment_id.strip()
 
     def extract(self, path: Path, content: str) -> SourceDocument:
         resolved_path = path.expanduser().resolve()
@@ -45,6 +46,7 @@ class FileMetadataExtractor:
             updated_at=_as_utc_iso(stat.st_mtime),
             media_type=media_type,
             tenant_id=self._tenant_id,
+            equipment_id=self._equipment_id,
         )
 
 

@@ -21,6 +21,20 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_timeout_seconds: float = Field(default=60.0, gt=0)
     llm_max_attempts: int = Field(default=3, ge=1, le=5)
+    vision_model: str = ""
+    multimodal_enabled: bool = True
+    multimodal_max_images: int = Field(default=1, ge=1, le=5)
+    multimodal_max_image_bytes: int = Field(
+        default=5_000_000,
+        ge=1_024,
+        le=20_000_000,
+    )
+    visual_catalog_enabled: bool = True
+    visual_collection: str = "equipment_images"
+    visual_embedding_model: str = "sentence-transformers/clip-ViT-B-32"
+    visual_embedding_device: str | None = None
+    visual_max_results: int = Field(default=3, ge=1, le=20)
+    visual_max_distance: float = Field(default=0.8, ge=0, le=4)
 
     embedding_model: str = "BAAI/bge-m3"
     embedding_device: str | None = None
