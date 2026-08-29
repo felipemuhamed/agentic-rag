@@ -21,7 +21,7 @@ de build.
 ## Servicos Compose
 
 ```text
-host:8000 -> api -> checkpoint-data
+host:8000 -> api -> checkpoint-data, upload-data
                 \
                  -> chroma:8000 -> chroma-data
                 /
@@ -52,7 +52,8 @@ docker compose up --build -d api
 docker compose ps
 ```
 
-O servico compartilha `model-cache` e grava o SQLite em `checkpoint-data`. Para
+O servico compartilha `model-cache`, grava o SQLite em `checkpoint-data` e os
+arquivos recebidos pelos endpoints de upload em `upload-data`. Para
 chat autenticado, configure `LLM_MODEL`, credenciais do provider,
 `AUTH_ENABLED`, `API_KEY_POLICIES` e o tenant no `.env`:
 
@@ -90,10 +91,12 @@ credenciais nao entram na imagem.
 |---|---|---|
 | `chroma-data` | Chroma: `/data` | Collection e embeddings |
 | `checkpoint-data` | API: `/data/checkpoints` | Threads SQLite |
+| `upload-data` | API: `/data/uploads` | Arquivos enviados por `POST /documents` |
 | `model-cache` | `/home/app/.cache/huggingface` | Modelos baixados |
 
 Chroma armazena apenas a base de conhecimento; mensagens ficam no
-checkpointer. Parar os containers preserva todos os volumes:
+checkpointer e os documentos enviados pela API ficam em `upload-data`, que os
+mantem disponiveis para reindexacao. Parar os containers preserva todos os volumes:
 
 ```bash
 docker compose down

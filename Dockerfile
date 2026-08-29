@@ -41,7 +41,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN groupadd --gid 10001 app \
     && useradd --uid 10001 --gid app --create-home --shell /usr/sbin/nologin app \
-    && mkdir -p /data/chroma /data/checkpoints /home/app/.cache/huggingface \
+    && mkdir -p /data/chroma /data/checkpoints /data/uploads /home/app/.cache/huggingface \
     && chown -R app:app /data /home/app
 
 WORKDIR /app

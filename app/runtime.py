@@ -1,18 +1,36 @@
 from collections.abc import Callable
-from threading import Lock
+from threading import RLock
 from typing import Any
 
 from app.graph.factory import create_rag_graph
+from app.knowledge.embeddings import SentenceTransformerEmbeddingProvider
+from app.knowledge.embeddings.base import EmbeddingProvider
+from app.knowledge.vectorstore.base import ManagedKnowledgeVectorStore
+from app.knowledge.vectorstore.factory import create_knowledge_vector_store
 from app.multimodal.analyzer import ImageAnalyzer
 from app.multimodal.factory import create_image_analyzer
 from app.persistence.checkpointer import CheckpointerHandle
 from app.settings import Settings
 from app.streaming.adapter import LangGraphStreamAdapter, StreamableRagGraph
-from app.visual_catalog.factory import create_visual_catalog_retriever
+from app.uploads.service import DocumentLibraryService
+from app.uploads.storage import UploadStorage
+from app.visual_catalog.embeddings import VisualEmbeddingProvider
+from app.visual_catalog.factory import (
+    create_visual_catalog_retriever,
+    create_visual_embedding_provider,
+    create_visual_vector_store,
+)
 from app.visual_catalog.retrieval import VisualCatalogRetriever
 
 
 class RagRuntime:
+    """Own the process-wide singletons shared by chat and document uploads.
+
+    Every component is created on first use and reused afterwards: the embedding
+    models weigh gigabytes, so retrieval and ingestion must share one instance.
+    The lock is reentrant because the accessors call each other while building.
+    """
+
     def __init__(
         self,
         config: Settings,
@@ -21,12 +39,17 @@ class RagRuntime:
     ):
         self._config = config
         self._checkpointer = CheckpointerHandle(config)
-        self._graph_builder = graph_builder or _build_graph
+        self._graph_builder = graph_builder or self._build_graph
         self._graph: StreamableRagGraph | None = None
         self._adapter: LangGraphStreamAdapter | None = None
         self._image_analyzer: ImageAnalyzer | None = None
         self._visual_catalog_retriever: VisualCatalogRetriever | None = None
-        self._lock = Lock()
+        self._embedding_provider: EmbeddingProvider | None = None
+        self._visual_embedding_provider: VisualEmbeddingProvider | None = None
+        self._knowledge_vector_store: ManagedKnowledgeVectorStore | None = None
+        self._visual_vector_store: ManagedKnowledgeVectorStore | None = None
+        self._document_library: DocumentLibraryService | None = None
+        self._lock = RLock()
         self._last_error: str | None = None
 
     def graph(self) -> StreamableRagGraph:
@@ -64,26 +87,73 @@ class RagRuntime:
     def image_analyzer(self) -> ImageAnalyzer:
         with self._lock:
             if self._image_analyzer is None:
-                try:
-                    self._image_analyzer = create_image_analyzer(self._config)
-                except Exception as error:
-                    self._last_error = type(error).__name__
-                    raise
-                self._last_error = None
+                self._image_analyzer = self._create(
+                    lambda: create_image_analyzer(self._config)
+                )
             return self._image_analyzer
 
     def visual_catalog_retriever(self) -> VisualCatalogRetriever:
         with self._lock:
             if self._visual_catalog_retriever is None:
-                try:
-                    self._visual_catalog_retriever = (
-                        create_visual_catalog_retriever(self._config)
+                self._visual_catalog_retriever = self._create(
+                    lambda: create_visual_catalog_retriever(
+                        self._config,
+                        vector_store=self.visual_vector_store(),
+                        embedding_provider_factory=self.visual_embedding_provider,
                     )
-                except Exception as error:
-                    self._last_error = type(error).__name__
-                    raise
-                self._last_error = None
+                )
             return self._visual_catalog_retriever
+
+    def embedding_provider(self) -> EmbeddingProvider:
+        with self._lock:
+            if self._embedding_provider is None:
+                self._embedding_provider = self._create(
+                    lambda: SentenceTransformerEmbeddingProvider(
+                        self._config.embedding_model,
+                        device=self._config.embedding_device,
+                    )
+                )
+            return self._embedding_provider
+
+    def visual_embedding_provider(self) -> VisualEmbeddingProvider:
+        with self._lock:
+            if self._visual_embedding_provider is None:
+                self._visual_embedding_provider = self._create(
+                    lambda: create_visual_embedding_provider(self._config)
+                )
+            return self._visual_embedding_provider
+
+    def knowledge_vector_store(self) -> ManagedKnowledgeVectorStore:
+        with self._lock:
+            if self._knowledge_vector_store is None:
+                self._knowledge_vector_store = self._create(
+                    lambda: create_knowledge_vector_store(self._config)
+                )
+            return self._knowledge_vector_store
+
+    def visual_vector_store(self) -> ManagedKnowledgeVectorStore:
+        with self._lock:
+            if self._visual_vector_store is None:
+                self._visual_vector_store = self._create(
+                    lambda: create_visual_vector_store(self._config)
+                )
+            return self._visual_vector_store
+
+    def document_library(self) -> DocumentLibraryService:
+        with self._lock:
+            if self._document_library is None:
+                self._document_library = DocumentLibraryService(
+                    storage=UploadStorage(self._config.upload_dir),
+                    knowledge_store_factory=self.knowledge_vector_store,
+                    embedding_provider_factory=self.embedding_provider,
+                    visual_store_factory=self.visual_vector_store,
+                    visual_embedding_provider_factory=(
+                        self.visual_embedding_provider
+                    ),
+                    chunk_size=self._config.ingestion_chunk_size,
+                    chunk_overlap=self._config.ingestion_chunk_overlap,
+                )
+            return self._document_library
 
     def close(self) -> None:
         with self._lock:
@@ -91,6 +161,11 @@ class RagRuntime:
             self._graph = None
             self._image_analyzer = None
             self._visual_catalog_retriever = None
+            self._document_library = None
+            self._embedding_provider = None
+            self._visual_embedding_provider = None
+            self._knowledge_vector_store = None
+            self._visual_vector_store = None
         self._checkpointer.close()
 
     @property
@@ -101,6 +176,23 @@ class RagRuntime:
     def last_error(self) -> str | None:
         return self._last_error
 
+    def _build_graph(
+        self,
+        config: Settings,
+        checkpointer: Any,
+    ) -> StreamableRagGraph:
+        return create_rag_graph(
+            config,
+            checkpointer=checkpointer,
+            vector_store=self.knowledge_vector_store(),
+            embedding_provider=self.embedding_provider(),
+        )
 
-def _build_graph(config: Settings, checkpointer: Any) -> StreamableRagGraph:
-    return create_rag_graph(config, checkpointer=checkpointer)
+    def _create(self, factory: Callable[[], Any]) -> Any:
+        try:
+            created = factory()
+        except Exception as error:
+            self._last_error = type(error).__name__
+            raise
+        self._last_error = None
+        return created

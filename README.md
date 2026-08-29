@@ -8,7 +8,7 @@ Implementacao incremental da arquitetura descrita em
 Etapa 1 (bootstrap da API): aceita. O endpoint de saude nao carrega LangGraph,
 Chroma, modelos de embedding ou qualquer servico externo.
 
-Etapa 2 (knowledge ingestion): implementada. Suporta TXT e Markdown,
+Etapa 2 (knowledge ingestion): implementada. Suporta TXT, Markdown e PDF,
 normalizacao, metadata rastreavel, chunking configuravel, embeddings com
 Sentence Transformers e persistencia em um servidor Chroma via HTTP. O modo
 persistente embutido permanece disponivel para testes isolados.
@@ -67,6 +67,11 @@ indexadas em uma collection visual separada e vinculadas a manuais pelo
 `equipment_id`. Uma imagem do usuario recupera equipamentos semelhantes antes
 da busca textual, permitindo identificar itens que o modelo visual publico nao
 conhece.
+
+Etapa 15 (upload pela API): implementada. `POST /documents` e
+`POST /documents/images` recebem arquivos por multipart, respondem `202` com um
+job acompanhavel e indexam em segundo plano; `GET /documents` e
+`DELETE /documents/{id}` completam a gestao do acervo sem acesso ao host.
 
 ## Requisitos
 
@@ -192,6 +197,42 @@ Cadastre fotos de diferentes angulos com o mesmo `equipment_id` para aumentar
 a cobertura. A primeira execucao baixa o modelo visual configurado. O limiar
 `VISUAL_MAX_DISTANCE` precisa ser calibrado com imagens reais; valores menores
 exigem maior similaridade.
+
+## Subir documentos pela API
+
+Alem dos CLIs, a propria API recebe arquivos. O envio responde `202` com um job,
+porque a ingestao carrega o modelo de embedding e pode levar minutos:
+
+```bash
+curl -X POST http://127.0.0.1:8000/documents \
+  -F 'file=@manual-olt.pdf' \
+  -F 'tenantId=public' \
+  -F 'equipmentId=OLT-9000'
+
+curl 'http://127.0.0.1:8000/documents/jobs/JOB_ID?tenantId=public'
+```
+
+Fotos de referencia do catalogo visual usam `POST /documents/images` com
+`equipmentId` e `equipmentName`. `GET /documents` lista o acervo e
+`DELETE /documents/{documentId}` remove os chunks e o arquivo enviado. Formatos,
+limites, codigos de erro e isolamento por tenant estao em
+[`docs/uploads.md`](docs/uploads.md).
+
+Para uma demonstracao completa em curl, com os arquivos de `documents/`:
+
+```bash
+scripts/ambiente.sh subir     # constroi a imagem, sobe chroma + api e espera o /ready
+scripts/ambiente.sh aquecer   # opcional: carrega os modelos antes da apresentacao
+scripts/demo-rag.sh           # roteiro da demonstracao
+```
+
+No roteiro, nenhuma pergunta cita o aparelho: a indicacao vem da foto anexada ao
+prompt. Ele carrega a especificacao e a foto do primeiro aparelho e pergunta com
+essa foto; repete a pergunta com a foto de outro aparelho e recebe a recusa
+segura, porque o manual dele ainda nao foi indexado; carrega esse manual e faz a
+mesma pergunta com a mesma foto, agora respondida. `scripts/ambiente.sh` ainda
+aceita `status`, `logs`, `parar` e `limpar`. A imagem precisa ser reconstruida
+porque os endpoints de upload dependem de `python-multipart` e `pypdf`.
 
 Depois de ingerir os documentos, o retriever pode ser executado isoladamente:
 

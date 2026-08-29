@@ -3,7 +3,7 @@ from pathlib import Path
 
 from app.knowledge.embeddings.base import EmbeddingProvider
 from app.knowledge.ingestion.chunker import TextChunker
-from app.knowledge.ingestion.loaders import TextFileLoader
+from app.knowledge.ingestion.loaders import DocumentFileLoader
 from app.knowledge.ingestion.normalizer import TextNormalizer
 from app.knowledge.vectorstore.base import KnowledgeVectorStore
 
@@ -21,7 +21,7 @@ class IngestionResult:
 class IngestionService:
     def __init__(
         self,
-        loader: TextFileLoader,
+        loader: DocumentFileLoader,
         normalizer: TextNormalizer,
         chunker: TextChunker,
         embedding_provider: EmbeddingProvider,

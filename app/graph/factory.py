@@ -1,7 +1,9 @@
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.graph.builder import build_rag_graph
+from app.knowledge.embeddings.base import EmbeddingProvider
 from app.knowledge.retrieval.factory import create_knowledge_retriever
+from app.knowledge.vectorstore.base import KnowledgeVectorStore
 from app.llm.answer_generator import LangChainAnswerGenerator
 from app.llm.models import create_chat_model
 from app.llm.query_preparer import LangChainQueryPreparer
@@ -16,6 +18,8 @@ def create_rag_graph(
     config: Settings = settings,
     *,
     checkpointer=None,
+    vector_store: KnowledgeVectorStore | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
 ):
     model = create_chat_model(
         config.llm_model,
@@ -43,7 +47,11 @@ def create_rag_graph(
         )
     )
     return build_rag_graph(
-        retriever=create_knowledge_retriever(config),
+        retriever=create_knowledge_retriever(
+            config,
+            vector_store=vector_store,
+            embedding_provider=embedding_provider,
+        ),
         grader=LangChainRagGrader(
             model,
             max_attempts=config.llm_max_attempts,

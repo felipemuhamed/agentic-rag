@@ -28,6 +28,13 @@ x-knowledge-environment: &knowledge-environment
   VISUAL_MAX_DISTANCE: ${VISUAL_MAX_DISTANCE:-0.8}
   INGESTION_CHUNK_SIZE: ${INGESTION_CHUNK_SIZE:-700}
   INGESTION_CHUNK_OVERLAP: ${INGESTION_CHUNK_OVERLAP:-100}
+  UPLOAD_ENABLED: ${UPLOAD_ENABLED:-true}
+  UPLOAD_DIR: /data/uploads
+  UPLOAD_MAX_BYTES: ${UPLOAD_MAX_BYTES:-20000000}
+  UPLOAD_WORKERS: ${UPLOAD_WORKERS:-1}
+  UPLOAD_MAX_PENDING_JOBS: ${UPLOAD_MAX_PENDING_JOBS:-32}
+  UPLOAD_MAX_JOBS: ${UPLOAD_MAX_JOBS:-200}
+  UPLOAD_JOB_RETENTION_SECONDS: ${UPLOAD_JOB_RETENTION_SECONDS:-3600}
   KNOWLEDGE_TENANT_ID: ${KNOWLEDGE_TENANT_ID:-}
   RAG_FETCH_K: ${RAG_FETCH_K:-60}
   RAG_CANDIDATE_K: ${RAG_CANDIDATE_K:-20}
@@ -119,6 +126,7 @@ services:
     volumes:
       - model-cache:/home/app/.cache/huggingface
       - checkpoint-data:/data/checkpoints
+      - upload-data:/data/uploads
     read_only: true
     tmpfs:
       - /tmp
@@ -224,3 +232,4 @@ volumes:
   chroma-data:
   model-cache:
   checkpoint-data:
+  upload-data:

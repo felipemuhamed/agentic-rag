@@ -182,6 +182,21 @@ evidencias citaveis e seus IDs formam um filtro `$in` para a busca de manuais,
 combinado ao filtro de tenant. O modelo recebe candidatos e distancias como
 evidencia, sem transformar similaridade visual em certeza automatica.
 
-Com esta entrega, as 14 etapas foram implementadas. As proximas iteracoes devem
+## Etapa 15 implementada
+
+A alimentacao do acervo deixou de exigir acesso ao host. `POST /documents` e
+`POST /documents/images` recebem arquivos por multipart, gravam em `UPLOAD_DIR`
+com nome saneado e caminho deterministico por tenant, e enfileiram a ingestao em
+um worker proprio; a resposta e `202` com um job consultavel em
+`GET /documents/jobs/{id}`. O caminho deterministico faz com que reenviar o
+mesmo nome substitua a versao anterior em vez de duplicar chunks.
+
+O pipeline textual passou a aceitar PDF pela camada de texto, com cada pagina
+marcada como um cabecalho para que o numero chegue as citacoes.
+`GET /documents` agrega os chunks por documento e `DELETE /documents/{id}`
+remove indice e arquivo, sempre sob o mesmo filtro de tenant do chat. Detalhes
+em [`uploads.md`](uploads.md).
+
+Com esta entrega, as 15 etapas foram implementadas. As proximas iteracoes devem
 ser dirigidas pelos resultados do corpus real, SLOs de producao e requisitos de
 escala.

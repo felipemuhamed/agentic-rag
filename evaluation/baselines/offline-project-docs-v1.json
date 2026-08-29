@@ -1,11 +1,11 @@
 {
   "schema_version": "1.0",
-  "generated_at": "2026-08-25T20:18:58.539408+00:00",
+  "generated_at": "2026-08-28T18:19:01.196485+00:00",
   "dataset": {
     "name": "agentic-rag-project-docs",
     "version": "1.1.0",
     "sha256": "1c784415f9242691c0a619f2c8eeacdb8b6ff9239613776ef7cc3a5a103772f2",
-    "corpus_sha256": "7312a920711595e42581300d0f21e74a1616cbcf5e228a371a8cae7241a862b9",
+    "corpus_sha256": "8f0896abdd07c901e878eba71f19fbddb712c3066e62335a8272a244b4f5ee00",
     "cases": 6
   },
   "configuration": {
@@ -34,9 +34,9 @@
       },
       "mrr": 1.0,
       "latency": {
-        "mean_ms": 432.093,
-        "p50_ms": 431.427,
-        "p95_ms": 443.444
+        "mean_ms": 812.202,
+        "p50_ms": 804.227,
+        "p95_ms": 916.287
       }
     },
     "answers": {
@@ -46,9 +46,9 @@
       "citation_validity": 1.0,
       "expected_source_recall": 1.0,
       "latency": {
-        "mean_ms": 0.985,
-        "p50_ms": 0.869,
-        "p95_ms": 1.359
+        "mean_ms": 1.581,
+        "p50_ms": 1.387,
+        "p95_ms": 2.506
       },
       "usage": {
         "calls": 6,
@@ -114,7 +114,7 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 422.401
+        "latency_ms": 798.686
       },
       "answer": "id e citation: identificador numerico e rotulo exibido na resposta; [1]",
       "answer_metrics": {
@@ -122,7 +122,7 @@
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 0.833,
+        "latency_ms": 0.994,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -136,22 +136,30 @@
       "retrieved": [
         {
           "rank": 1,
-          "chunk_id": "docs/containers.md#chunk:6",
+          "chunk_id": "docs/containers.md#chunk:7",
           "document_id": null,
           "source": "docs/containers.md",
-          "retrieval_score": -0.6072077975752136,
-          "rerank_score": 0.17928429140015903
+          "retrieval_score": -0.5692944783534675,
+          "rerank_score": 0.1978141420187361
         },
         {
           "rank": 2,
-          "chunk_id": "docs/containers.md#chunk:8",
+          "chunk_id": "docs/containers.md#chunk:6",
           "document_id": null,
           "source": "docs/containers.md",
-          "retrieval_score": -0.5164816918276004,
-          "rerank_score": 0.13483997249264842
+          "retrieval_score": -0.7335145543305917,
+          "rerank_score": 0.17928429140015903
         },
         {
           "rank": 3,
+          "chunk_id": "docs/containers.md#chunk:9",
+          "document_id": null,
+          "source": "docs/containers.md",
+          "retrieval_score": -0.5120499635257334,
+          "rerank_score": 0.15811388300841897
+        },
+        {
+          "rank": 4,
           "chunk_id": "docs/containers.md#chunk:5",
           "document_id": null,
           "source": "docs/containers.md",
@@ -159,20 +167,12 @@
           "rerank_score": 0.1318760946791574
         },
         {
-          "rank": 4,
+          "rank": 5,
           "chunk_id": "docs/retrieval.md#chunk:3",
           "document_id": null,
           "source": "docs/retrieval.md",
           "retrieval_score": -0.8471058425687124,
           "rerank_score": 0.12777531299998798
-        },
-        {
-          "rank": 5,
-          "chunk_id": "docs/containers.md#chunk:3",
-          "document_id": null,
-          "source": "docs/containers.md",
-          "retrieval_score": -0.7999999999999999,
-          "rerank_score": 0.12171612389003691
         }
       ],
       "retrieval": {
@@ -182,7 +182,7 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 438.922
+        "latency_ms": 938.431
       },
       "answer": "docker compose down [1]",
       "answer_metrics": {
@@ -190,7 +190,7 @@
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 1.389,
+        "latency_ms": 2.02,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -220,19 +220,19 @@
         },
         {
           "rank": 3,
-          "chunk_id": "docs/containers.md#chunk:6",
+          "chunk_id": "docs/containers.md#chunk:8",
           "document_id": null,
           "source": "docs/containers.md",
-          "retrieval_score": -0.8619868881315291,
-          "rerank_score": 0.0944911182523068
+          "retrieval_score": -0.8684412971039457,
+          "rerank_score": 0.09901475429766744
         },
         {
           "rank": 4,
-          "chunk_id": "docs/containers.md#chunk:7",
+          "chunk_id": "docs/containers.md#chunk:6",
           "document_id": null,
           "source": "docs/containers.md",
-          "retrieval_score": -0.8814145877436858,
-          "rerank_score": 0.09284766908852593
+          "retrieval_score": -0.8796141469142308,
+          "rerank_score": 0.0944911182523068
         },
         {
           "rank": 5,
@@ -250,7 +250,7 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 444.951
+        "latency_ms": 725.32
       },
       "answer": "CHECKPOINTER_MODE=sqlite usa um arquivo SQLite com WAL, espera para locks e [1]",
       "answer_metrics": {
@@ -258,7 +258,7 @@
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 1.268,
+        "latency_ms": 1.355,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -318,7 +318,7 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 428.982
+        "latency_ms": 849.856
       },
       "answer": "MAX_RAG_ATTEMPTS e o numero total permitido de retrievals, [1]",
       "answer_metrics": {
@@ -326,7 +326,7 @@
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 0.784,
+        "latency_ms": 2.668,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -386,7 +386,7 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 433.872
+        "latency_ms": 751.154
       },
       "answer": "| RAG_FINAL_K | 5 | Chunks finais depois do reranking | [1]",
       "answer_metrics": {
@@ -394,7 +394,7 @@
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 0.905,
+        "latency_ms": 1.419,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,
@@ -454,7 +454,7 @@
           "5": 1.0
         },
         "reciprocal_rank": 1.0,
-        "latency_ms": 423.429
+        "latency_ms": 809.768
       },
       "answer": "a unica responsavel por acionar web, e existe no maximo uma busca externa por [1]",
       "answer_metrics": {
@@ -462,7 +462,7 @@
         "grounding": 1.0,
         "citation_validity": 1.0,
         "expected_source_recall": 1.0,
-        "latency_ms": 0.733,
+        "latency_ms": 1.027,
         "usage": {
           "input_tokens": 0,
           "output_tokens": 0,

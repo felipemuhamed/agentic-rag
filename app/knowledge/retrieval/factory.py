@@ -1,24 +1,23 @@
 from app.knowledge.embeddings import SentenceTransformerEmbeddingProvider
+from app.knowledge.embeddings.base import EmbeddingProvider
 from app.knowledge.retrieval.reranker import CrossEncoderReranker
 from app.knowledge.retrieval.retriever import KnowledgeRetriever
-from app.knowledge.vectorstore.factory import create_chroma_vector_store
+from app.knowledge.vectorstore.base import KnowledgeVectorStore
+from app.knowledge.vectorstore.factory import create_knowledge_vector_store
 from app.settings import Settings, settings
 
 
-def create_knowledge_retriever(config: Settings = settings) -> KnowledgeRetriever:
-    vector_store = create_chroma_vector_store(
-        mode=config.chroma_mode,
-        collection_name=config.chroma_collection,
-        path=config.chroma_path,
-        host=config.chroma_host,
-        port=config.chroma_port,
-        ssl=config.chroma_ssl,
-        tenant=config.chroma_tenant,
-        database=config.chroma_database,
-    )
+def create_knowledge_retriever(
+    config: Settings = settings,
+    *,
+    vector_store: KnowledgeVectorStore | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
+) -> KnowledgeRetriever:
+    """Build the retriever, reusing an already loaded store or model if given."""
     return KnowledgeRetriever(
-        vector_store=vector_store,
-        embedding_provider=SentenceTransformerEmbeddingProvider(
+        vector_store=vector_store or create_knowledge_vector_store(config),
+        embedding_provider=embedding_provider
+        or SentenceTransformerEmbeddingProvider(
             config.embedding_model,
             device=config.embedding_device,
         ),

@@ -1,5 +1,4 @@
 import logging
-from math import ceil
 from threading import Event
 from time import monotonic
 from typing import Annotated, Iterator
@@ -9,6 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.api.security import acquire_rate_limit, authorize_request
 from app.multimodal.models import (
     ABSOLUTE_MAX_IMAGES,
     ChatImage,
@@ -16,8 +16,7 @@ from app.multimodal.models import (
     InvalidImageError,
     validate_image_inputs,
 )
-from app.security.access import AuthenticationError, TenantAccessError
-from app.security.rate_limit import RateLimitExceeded, RateLimitLease
+from app.security.rate_limit import RateLimitLease
 from app.streaming.adapter import LangGraphStreamAdapter
 from app.streaming.events import StreamEvent
 
@@ -81,22 +80,11 @@ async def stream_chat(
     ],
     api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
 ) -> StreamingResponse:
-    metrics = request.app.state.metrics
-    try:
-        access = request.app.state.access_policy.authorize(
-            api_key=api_key,
-            tenant_id=payload.tenant_id,
-        )
-    except AuthenticationError as error:
-        metrics.auth_failed()
-        raise HTTPException(
-            status_code=401,
-            detail="invalid API credential",
-            headers={"WWW-Authenticate": "ApiKey"},
-        ) from error
-    except TenantAccessError as error:
-        metrics.auth_failed()
-        raise HTTPException(status_code=403, detail="tenant access denied") from error
+    access = authorize_request(
+        request,
+        api_key=api_key,
+        tenant_id=payload.tenant_id,
+    )
 
     if payload.images and not request.app.state.config.multimodal_enabled:
         raise HTTPException(status_code=422, detail="multimodal input is disabled")
@@ -113,15 +101,7 @@ async def stream_chat(
     except InvalidImageError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 
-    try:
-        lease = request.app.state.rate_limiter.acquire(access.quota_key)
-    except RateLimitExceeded as error:
-        metrics.rate_limit_rejected()
-        raise HTTPException(
-            status_code=429,
-            detail="rate limit exceeded",
-            headers={"Retry-After": str(max(ceil(error.retry_after), 1))},
-        ) from error
+    lease = acquire_rate_limit(request, access)
 
     cancellation = Event()
     events = adapter.stream(

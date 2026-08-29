@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from app.knowledge.ingestion.chunker import TextChunker
-from app.knowledge.ingestion.loaders import TextFileLoader
+from app.knowledge.ingestion.loaders import DocumentFileLoader
 from app.knowledge.ingestion.metadata import FileMetadataExtractor
 from app.knowledge.ingestion.normalizer import TextNormalizer
 from app.knowledge.ingestion.service import EmptyDocumentError, IngestionService
@@ -19,7 +19,7 @@ class DeterministicEmbeddingProvider:
 def make_service(tmp_path: Path) -> tuple[IngestionService, ChromaVectorStore]:
     vector_store = ChromaVectorStore(tmp_path / "chroma", "knowledge_test")
     service = IngestionService(
-        loader=TextFileLoader(),
+        loader=DocumentFileLoader(),
         normalizer=TextNormalizer(),
         chunker=TextChunker(chunk_size=90, chunk_overlap=15),
         embedding_provider=DeterministicEmbeddingProvider(),
@@ -91,7 +91,7 @@ def test_ingestion_adds_tenant_metadata_when_configured(tmp_path: Path) -> None:
     path.write_text("# Tenant\n\nScoped content.", encoding="utf-8")
     vector_store = ChromaVectorStore(tmp_path / "tenant-chroma", "tenant_test")
     service = IngestionService(
-        loader=TextFileLoader(FileMetadataExtractor(tenant_id="tenant-a")),
+        loader=DocumentFileLoader(FileMetadataExtractor(tenant_id="tenant-a")),
         normalizer=TextNormalizer(),
         chunker=TextChunker(chunk_size=90, chunk_overlap=15),
         embedding_provider=DeterministicEmbeddingProvider(),
@@ -102,7 +102,7 @@ def test_ingestion_adds_tenant_metadata_when_configured(tmp_path: Path) -> None:
     records = vector_store.get_document_chunks(result.document_id)
 
     second_service = IngestionService(
-        loader=TextFileLoader(FileMetadataExtractor(tenant_id="tenant-b")),
+        loader=DocumentFileLoader(FileMetadataExtractor(tenant_id="tenant-b")),
         normalizer=TextNormalizer(),
         chunker=TextChunker(chunk_size=90, chunk_overlap=15),
         embedding_provider=DeterministicEmbeddingProvider(),
@@ -120,7 +120,7 @@ def test_ingestion_links_document_chunks_to_equipment(tmp_path: Path) -> None:
     path.write_text("# Manual\n\nProcedimento proprietário.", encoding="utf-8")
     vector_store = ChromaVectorStore(tmp_path / "equipment", "manuals")
     service = IngestionService(
-        loader=TextFileLoader(
+        loader=DocumentFileLoader(
             FileMetadataExtractor(
                 tenant_id="public",
                 equipment_id="OLT-9000",

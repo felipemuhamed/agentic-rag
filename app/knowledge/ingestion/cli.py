@@ -5,7 +5,7 @@ from typing import Sequence
 
 from app.knowledge.embeddings import SentenceTransformerEmbeddingProvider
 from app.knowledge.ingestion.chunker import TextChunker
-from app.knowledge.ingestion.loaders import TextFileLoader
+from app.knowledge.ingestion.loaders import DocumentFileLoader
 from app.knowledge.ingestion.metadata import FileMetadataExtractor
 from app.knowledge.ingestion.normalizer import TextNormalizer
 from app.knowledge.ingestion.service import IngestionService
@@ -15,7 +15,7 @@ from app.settings import settings
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Load TXT or Markdown documents into Chroma."
+        description="Load TXT, Markdown or PDF documents into Chroma."
     )
     parser.add_argument("paths", nargs="+", type=Path)
     parser.add_argument(
@@ -65,7 +65,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     service = IngestionService(
-        loader=TextFileLoader(
+        loader=DocumentFileLoader(
             FileMetadataExtractor(
                 tenant_id=args.tenant_id,
                 equipment_id=args.equipment_id,

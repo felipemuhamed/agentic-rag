@@ -86,7 +86,7 @@ def validate_image_inputs(
             raise ImageTooLargeError(
                 f"each image must have at most {max_image_bytes} bytes"
             )
-        if not _matches_signature(decoded, image.mime_type):
+        if not matches_image_signature(decoded, image.mime_type):
             raise InvalidImageError(
                 "image bytes do not match the declared MIME type"
             )
@@ -101,7 +101,8 @@ def validate_image_inputs(
     return validated
 
 
-def _matches_signature(data: bytes, mime_type: str) -> bool:
+def matches_image_signature(data: bytes, mime_type: str) -> bool:
+    """Check the magic bytes so a declared MIME type cannot lie about content."""
     if mime_type == "image/png":
         return data.startswith(b"\x89PNG\r\n\x1a\n")
     if mime_type == "image/jpeg":

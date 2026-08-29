@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 
 from app.api.chat import router as chat_router
+from app.api.documents import router as documents_router
 from app.api.health import router as health_router
 from app.api.operations import router as operations_router
 from app.observability.logging import (
@@ -19,6 +20,7 @@ from app.runtime import RagRuntime
 from app.security.access import AccessPolicy
 from app.security.rate_limit import RateLimiter
 from app.settings import Settings, settings
+from app.uploads.jobs import UploadJobManager
 
 
 logger = logging.getLogger(__name__)
@@ -33,10 +35,19 @@ def create_app(
 ) -> FastAPI:
     configure_logging(level=config.log_level, json_logs=config.json_logs)
     rag_runtime = runtime or RagRuntime(config)
+    upload_jobs = UploadJobManager(
+        workers=config.upload_workers,
+        max_pending=config.upload_max_pending_jobs,
+        max_jobs=config.upload_max_jobs,
+        retention_seconds=config.upload_job_retention_seconds,
+    )
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
         yield
+        # Ingestion runs outside the request, so it has to drain before the
+        # runtime releases the models and the vector store it is writing to.
+        upload_jobs.shutdown()
         rag_runtime.close()
 
     application = FastAPI(
@@ -47,6 +58,7 @@ def create_app(
     application.state.config = config
     application.state.rag_runtime = rag_runtime
     application.state.metrics = metrics or MetricsRegistry()
+    application.state.upload_jobs = upload_jobs
     application.state.access_policy = AccessPolicy.from_settings(config)
     application.state.rate_limiter = RateLimiter(
         enabled=config.rate_limit_enabled,
@@ -91,6 +103,7 @@ def create_app(
     application.include_router(health_router)
     application.include_router(operations_router)
     application.include_router(chat_router)
+    application.include_router(documents_router)
     return application
 
 

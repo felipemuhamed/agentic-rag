@@ -5,7 +5,7 @@ from typing import Any
 
 from app.evaluation.metrics import lexical_tokens
 from app.knowledge.ingestion.chunker import TextChunker
-from app.knowledge.ingestion.loaders import TextFileLoader
+from app.knowledge.ingestion.loaders import DocumentFileLoader
 from app.knowledge.ingestion.normalizer import TextNormalizer
 from app.knowledge.ingestion.service import IngestionService
 from app.knowledge.models import Chunk, VectorCandidate
@@ -127,7 +127,7 @@ def create_offline_retriever(
     embeddings = HashingEmbeddingProvider()
     vector_store = InMemoryEvaluationVectorStore()
     ingestion = IngestionService(
-        loader=TextFileLoader(),
+        loader=DocumentFileLoader(),
         normalizer=TextNormalizer(),
         chunker=TextChunker(
             chunk_size=chunk_size,

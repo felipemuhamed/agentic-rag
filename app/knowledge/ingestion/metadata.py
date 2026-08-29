@@ -8,6 +8,7 @@ SUPPORTED_MEDIA_TYPES = {
     ".md": "text/markdown",
     ".markdown": "text/markdown",
     ".txt": "text/plain",
+    ".pdf": "application/pdf",
 }
 
 

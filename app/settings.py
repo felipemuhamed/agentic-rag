@@ -53,6 +53,18 @@ class Settings(BaseSettings):
     ingestion_chunk_size: int = 700
     ingestion_chunk_overlap: int = 100
 
+    upload_enabled: bool = True
+    upload_dir: str = "./data/uploads"
+    upload_max_bytes: int = Field(
+        default=20_000_000,
+        ge=1_024,
+        le=200_000_000,
+    )
+    upload_workers: int = Field(default=1, ge=1, le=8)
+    upload_max_pending_jobs: int = Field(default=32, ge=1, le=1_000)
+    upload_max_jobs: int = Field(default=200, ge=1, le=10_000)
+    upload_job_retention_seconds: float = Field(default=3_600.0, gt=0)
+
     rag_fetch_k: int = 60
     rag_candidate_k: int = 20
     rag_final_k: int = 5
@@ -98,6 +110,8 @@ class Settings(BaseSettings):
     def validate_production_controls(self) -> "Settings":
         if self.checkpointer_mode == "sqlite" and not self.checkpointer_path.strip():
             raise ValueError("CHECKPOINTER_PATH must not be blank in sqlite mode")
+        if self.upload_enabled and not self.upload_dir.strip():
+            raise ValueError("UPLOAD_DIR must not be blank when uploads are enabled")
         if (
             self.web_search_enabled
             and not self.tavily_api_key.get_secret_value().strip()

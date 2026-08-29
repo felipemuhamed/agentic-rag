@@ -33,6 +33,26 @@ class Chunk:
 
 
 @dataclass(frozen=True, slots=True)
+class IndexedDocument:
+    document_id: str
+    title: str
+    source: str
+    media_type: str
+    chunk_count: int
+    created_at: str = ""
+    updated_at: str = ""
+    tenant_id: str = ""
+    equipment_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class DeletedDocument:
+    document_id: str
+    chunks_deleted: int
+    source: str
+
+
+@dataclass(frozen=True, slots=True)
 class VectorCandidate:
     chunk_id: str
     content: str
