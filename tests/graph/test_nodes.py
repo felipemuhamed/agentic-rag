@@ -338,6 +338,7 @@ def test_visual_matches_filter_manuals_by_equipment_and_tenant() -> None:
             "retrieval_attempts": 0,
             "retrieval_filters": {"tenant_id": "public"},
             "image_reference_documents": [reference],
+            "resolved_equipment_ids": ["OLT-9000"],
         }
     )
 
@@ -351,6 +352,47 @@ def test_visual_matches_filter_manuals_by_equipment_and_tenant() -> None:
     ]
     assert result["documents"] == [reference, make_document()]
     assert result["retrieval_diagnostics"].returned_count == 2
+
+
+def test_unresolved_equipment_keeps_the_manual_search_unfiltered() -> None:
+    retriever = FilteringStubRetriever([make_document()])
+    nodes = RagNodes(
+        retriever=retriever,
+        grader=StubGrader(),
+        query_preparer=StubQueryPreparer(),
+        query_rewriter=StubQueryRewriter(),
+        web_search=StubWebSearch(),
+        web_grader=StubWebGrader(),
+        answer_generator=StubAnswerGenerator(),
+        max_rag_attempts=1,
+    )
+    reference = RetrievedDocument(
+        chunk_id="visual-ref:one",
+        content="Candidato visual proprietário.",
+        metadata={
+            "source": "/references/device.png",
+            "equipment_id": "OLT-9000",
+        },
+        retrieval_score=-0.1,
+        rerank_score=0.9,
+    )
+
+    result = nodes.retrieve_rag(
+        {
+            "question": "Qual equipamento?",
+            "prepared_query": "Qual equipamento?",
+            "search_query": "equipamento da imagem",
+            "retrieval_attempts": 0,
+            "retrieval_filters": {"tenant_id": "public"},
+            "image_reference_documents": [reference],
+            "resolved_equipment_ids": [],
+        }
+    )
+
+    # An abstention must not narrow the search: a candidate the resolver would
+    # not commit to is evidence, not an identity.
+    assert retriever.filters == [{"tenant_id": "public"}]
+    assert result["documents"] == [reference, make_document()]
 
 
 def test_irrelevant_rag_routes_through_web_before_no_answer() -> None:

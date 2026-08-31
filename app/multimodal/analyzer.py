@@ -74,14 +74,19 @@ class LangChainImageAnalyzer:
         model: StructuredOutputModel,
         *,
         max_attempts: int = 1,
+        callbacks: Sequence[Any] | None = None,
     ):
         if max_attempts < 1:
             raise ValueError("max_attempts must be at least one")
         structured_model = model.with_structured_output(ImageAnalysis)
         if hasattr(structured_model, "with_config"):
-            structured_model = structured_model.with_config(
-                {"tags": ["image-analysis", "nostream"]}
-            )
+            # The vision call happens before the graph opens, so it carries the
+            # tracing callbacks itself; the root observation the caller opened
+            # is what keeps it in the same trace as the answer.
+            config: dict[str, Any] = {"tags": ["image-analysis", "nostream"]}
+            if callbacks:
+                config["callbacks"] = list(callbacks)
+            structured_model = structured_model.with_config(config)
         if max_attempts > 1 and hasattr(structured_model, "with_retry"):
             structured_model = structured_model.with_retry(
                 stop_after_attempt=max_attempts,

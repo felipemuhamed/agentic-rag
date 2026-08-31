@@ -9,6 +9,7 @@ from app.knowledge.vectorstore.base import ManagedKnowledgeVectorStore
 from app.knowledge.vectorstore.factory import create_knowledge_vector_store
 from app.multimodal.analyzer import ImageAnalyzer
 from app.multimodal.factory import create_image_analyzer
+from app.observability.tracing import Tracing, create_tracing
 from app.persistence.checkpointer import CheckpointerHandle
 from app.settings import Settings
 from app.streaming.adapter import LangGraphStreamAdapter, StreamableRagGraph
@@ -16,6 +17,7 @@ from app.uploads.service import DocumentLibraryService
 from app.uploads.storage import UploadStorage
 from app.visual_catalog.embeddings import VisualEmbeddingProvider
 from app.visual_catalog.factory import (
+    create_equipment_resolver,
     create_visual_catalog_retriever,
     create_visual_embedding_provider,
     create_visual_vector_store,
@@ -49,8 +51,12 @@ class RagRuntime:
         self._knowledge_vector_store: ManagedKnowledgeVectorStore | None = None
         self._visual_vector_store: ManagedKnowledgeVectorStore | None = None
         self._document_library: DocumentLibraryService | None = None
+        self._tracing: Tracing | None = None
         self._lock = RLock()
         self._last_error: str | None = None
+        # Lazy mode has nothing to wait for, so it starts warm. With warmup
+        # enabled, readiness stays closed until every model is in memory.
+        self._warm = not config.warmup_on_startup
 
     def graph(self) -> StreamableRagGraph:
         with self._lock:
@@ -76,6 +82,12 @@ class RagRuntime:
                         if self._config.visual_catalog_enabled
                         else None
                     ),
+                    equipment_resolver=(
+                        create_equipment_resolver(self._config)
+                        if self._config.visual_catalog_enabled
+                        else None
+                    ),
+                    tracing=self.tracing(),
                     max_rag_attempts=self._config.max_rag_attempts,
                     web_search_enabled=self._config.web_search_enabled,
                     max_duration_seconds=(
@@ -88,9 +100,21 @@ class RagRuntime:
         with self._lock:
             if self._image_analyzer is None:
                 self._image_analyzer = self._create(
-                    lambda: create_image_analyzer(self._config)
+                    lambda: create_image_analyzer(
+                        self._config,
+                        callbacks=self.tracing().callbacks(),
+                    )
                 )
             return self._image_analyzer
+
+    def tracing(self) -> Tracing:
+        with self._lock:
+            if self._tracing is None:
+                # Never routed through _create: a tracing backend that is down
+                # must not close readiness, so create_tracing degrades to a
+                # no-op instead of raising.
+                self._tracing = create_tracing(self._config)
+            return self._tracing
 
     def visual_catalog_retriever(self) -> VisualCatalogRetriever:
         with self._lock:
@@ -155,8 +179,31 @@ class RagRuntime:
                 )
             return self._document_library
 
+    def warmup(self) -> None:
+        """Load every heavy model before the first request arrives.
+
+        The graph pulls in the embedding model and the cross-encoder reranker,
+        and the visual provider pulls in CLIP. Together they weigh gigabytes and
+        take far longer to load than a stream is allowed to last, so a replica
+        that loads them inside the first request spends that request's whole
+        deadline on startup work and answers nothing.
+        """
+        self.tracing()
+        self.graph()
+        self.image_analyzer()
+        if self._config.visual_catalog_enabled:
+            self.visual_embedding_provider()
+            self.visual_catalog_retriever()
+        with self._lock:
+            self._warm = True
+
     def close(self) -> None:
         with self._lock:
+            if self._tracing is not None:
+                # Buffered spans are lost unless the exporter is drained.
+                self._tracing.shutdown()
+                self._tracing = None
+            self._warm = not self._config.warmup_on_startup
             self._adapter = None
             self._graph = None
             self._image_analyzer = None
@@ -170,7 +217,7 @@ class RagRuntime:
 
     @property
     def ready(self) -> bool:
-        return self._last_error is None
+        return self._last_error is None and self._warm
 
     @property
     def last_error(self) -> str | None:

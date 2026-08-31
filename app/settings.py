@@ -36,6 +36,21 @@ class Settings(BaseSettings):
     visual_max_results: int = Field(default=3, ge=1, le=20)
     visual_max_distance: float = Field(default=0.8, ge=0, le=4)
 
+    # Equipment resolution fuses OCR identifiers with visual similarity. The
+    # weight decides how much a legible model plate outranks a lookalike photo.
+    equipment_identifier_weight: float = Field(default=0.65, ge=0, le=1)
+    equipment_min_confidence: float = Field(default=0.55, ge=0, le=1)
+    equipment_ambiguity_margin: float = Field(default=0.08, ge=0, le=1)
+
+    warmup_on_startup: bool = True
+
+    # Tracing is opt-in: the stack is six extra containers, and the service has
+    # to keep answering when it is not running.
+    langfuse_enabled: bool = False
+    langfuse_base_url: str = "http://langfuse-web:3000"
+    langfuse_public_key: SecretStr = SecretStr("")
+    langfuse_secret_key: SecretStr = SecretStr("")
+
     embedding_model: str = "BAAI/bge-m3"
     embedding_device: str | None = None
     reranker_model: str = "BAAI/bge-reranker-v2-m3"

@@ -78,6 +78,74 @@ def event_names(events) -> list[str]:
     return [event.event for event in events]
 
 
+class RecordingTracing:
+    """Stand in for Langfuse without needing the SDK installed."""
+
+    def __init__(self):
+        self.events: list[str] = []
+        self.sessions: list[str] = []
+
+    def callbacks(self) -> list[object]:
+        return ["langfuse-handler"]
+
+    def conversation(self, *, session_id: str, tags):
+        self.sessions.append(session_id)
+        recorder = self.events
+
+        class Scope:
+            def __enter__(self):
+                recorder.append("open")
+                return self
+
+            def __exit__(self, *exc_info):
+                recorder.append("close")
+                return False
+
+        return Scope()
+
+    def shutdown(self) -> None:
+        self.events.append("shutdown")
+
+
+def test_tracing_wraps_the_stream_and_reaches_the_graph() -> None:
+    graph = FakeGraph(
+        [
+            (
+                "updates",
+                {
+                    "generate_answer": {
+                        "answer": "Resposta final [1].",
+                        "source": "rag",
+                        "sources": [RAG_SOURCE],
+                    }
+                },
+            ),
+        ]
+    )
+    tracing = RecordingTracing()
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=2,
+        tracing=tracing,
+    )
+
+    list(
+        adapter.stream(
+            conversation_id="conversation-1",
+            message="Pergunta",
+            thread_id="thread-hash",
+        )
+    )
+
+    # The trace has to close after the last event, not when the generator is
+    # created, or a streamed answer would be recorded as empty.
+    assert tracing.events == ["open", "close"]
+    # Sessions group a conversation, so the derived thread is the identity --
+    # it is a digest, never the public conversation id.
+    assert tracing.sessions == ["thread-hash"]
+    assert graph.inputs[0][1]["callbacks"] == ["langfuse-handler"]
+
+
 def test_adapter_streams_only_final_generation_tokens() -> None:
     graph = FakeGraph(
         [
@@ -158,8 +226,12 @@ def test_adapter_streams_only_final_generation_tokens() -> None:
                 "image_context": "",
                 "image_document": None,
                 "image_reference_documents": [],
+                "resolved_equipment_ids": [],
             },
-            {"configurable": {"thread_id": "conversation-1"}},
+            {
+                "configurable": {"thread_id": "conversation-1"},
+                "callbacks": [],
+            },
             ["updates"],
         )
     ]

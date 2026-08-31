@@ -265,7 +265,7 @@ pytest
 O plano de entregas e os gates entre iteracoes estao em
 [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md).
 Os controles e o checklist de deploy estao em
-[`docs/production.md`](docs/production.md).
+[`docs/production.md`](docs/production.md), o tracing de LLM em [`docs/tracing.md`](docs/tracing.md).
 
 ## Executar a avaliacao
 

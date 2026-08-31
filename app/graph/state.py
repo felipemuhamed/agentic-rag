@@ -17,6 +17,7 @@ class RagInput(TypedDict):
     image_context: NotRequired[str]
     image_document: NotRequired[RetrievedDocument | None]
     image_reference_documents: NotRequired[list[RetrievedDocument]]
+    resolved_equipment_ids: NotRequired[list[str]]
 
 
 class RagOutput(TypedDict):
@@ -31,6 +32,7 @@ class RagState(TypedDict):
     image_context: NotRequired[str]
     image_document: NotRequired[RetrievedDocument | None]
     image_reference_documents: NotRequired[list[RetrievedDocument]]
+    resolved_equipment_ids: NotRequired[list[str]]
     prepared_query: NotRequired[str]
     search_query: NotRequired[str]
     retrieval_filters: NotRequired[dict[str, Any]]

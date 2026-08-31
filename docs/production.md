@@ -139,6 +139,21 @@ Alertas iniciais podem observar taxa de `5xx`, streams com `error`/`timeout`,
 latencia p95, saturacao de streams e rejeicoes do rate limiter. A Etapa 11
 continua sendo o gate offline de qualidade; essas metricas medem o SLO online.
 
+## Warmup e prontidao
+
+Com `WARMUP_ON_STARTUP=true`, a aplicacao carrega o modelo de embedding, o
+reranker e o CLIP em uma thread propria durante o startup, e `/ready` responde
+503 ate que os tres estejam em memoria. Sem isso a prontidao e otimista: um
+container recem-subido se declara pronto antes de qualquer modelo existir, o
+balanceador manda trafego real para ele e a primeira requisicao gasta o
+`STREAM_MAX_DURATION_SECONDS` inteiro carregando pesos em vez de responder.
+
+O carregamento roda fora do event loop de proposito. Bloquear o startup faria o
+servidor nao aceitar conexao nenhuma, e a replica ficaria indistinguivel de uma
+que caiu; respondendo 503 ela informa o que esta acontecendo. Se o warmup
+falhar, a prontidao permanece fechada e o motivo vai para o log -- que e
+exatamente o sinal que o orquestrador precisa para nao rotear trafego.
+
 ## Container e deploy
 
 O servico `api` do Compose executa como usuario sem privilegios, remove todas

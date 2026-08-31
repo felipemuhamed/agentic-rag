@@ -17,7 +17,7 @@ FROM build-base AS api-builder
 
 ARG LLM_PROVIDER_PACKAGE=langchain-openrouter==0.2.8
 
-RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag,web]' "${LLM_PROVIDER_PACKAGE}"
+RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag,web,tracing]' "${LLM_PROVIDER_PACKAGE}"
 
 
 FROM build-base AS knowledge-builder
@@ -29,7 +29,7 @@ FROM build-base AS rag-builder
 
 ARG LLM_PROVIDER_PACKAGE=langchain-openrouter==0.2.8
 
-RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag,web]' "${LLM_PROVIDER_PACKAGE}"
+RUN python -m pip wheel --wheel-dir /wheels '.[knowledge,rag,web,tracing]' "${LLM_PROVIDER_PACKAGE}"
 
 
 FROM python:${PYTHON_VERSION}-slim AS runtime-base

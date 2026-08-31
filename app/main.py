@@ -1,6 +1,7 @@
 import logging
 import re
 from contextlib import asynccontextmanager
+from threading import Thread
 from time import monotonic
 from uuid import uuid4
 
@@ -44,6 +45,16 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
+        if config.warmup_on_startup:
+            # Loading happens off the event loop so the server can answer
+            # /ready with 503 while it runs, instead of accepting no
+            # connections at all and looking like a crashed replica.
+            Thread(
+                target=_warmup,
+                args=(rag_runtime,),
+                name="rag-warmup",
+                daemon=True,
+            ).start()
         yield
         # Ingestion runs outside the request, so it has to drain before the
         # runtime releases the models and the vector store it is writing to.
@@ -105,6 +116,20 @@ def create_app(
     application.include_router(chat_router)
     application.include_router(documents_router)
     return application
+
+
+def _warmup(runtime: RagRuntime) -> None:
+    started_at = monotonic()
+    try:
+        runtime.warmup()
+    except Exception as error:
+        # Readiness stays closed, which is the signal the orchestrator needs.
+        logger.error("Model warmup failed: %s", type(error).__name__)
+        return
+    logger.info(
+        "Model warmup completed",
+        extra={"duration_ms": round((monotonic() - started_at) * 1000, 3)},
+    )
 
 
 app = create_app()

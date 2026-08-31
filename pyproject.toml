@@ -28,6 +28,10 @@ rag = [
 web = [
     "httpx>=0.28,<1",
 ]
+tracing = [
+    # v4 is the first release whose ingestion the self-hosted v4 server accepts.
+    "langfuse>=4.7,<5",
+]
 dev = [
     "chromadb>=1.5,<2",
     "httpx>=0.28,<1",
@@ -45,6 +49,7 @@ agentic-rag-index-image = "app.visual_catalog.cli:main"
 agentic-rag-retrieve = "app.knowledge.retrieval.cli:main"
 agentic-rag-ask = "app.graph.cli:main"
 agentic-rag-evaluate = "app.evaluation.cli:main"
+agentic-rag-evaluate-visual = "app.visual_catalog.evaluation_cli:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]

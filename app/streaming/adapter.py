@@ -5,10 +5,12 @@ from time import monotonic
 from typing import Any, Protocol
 
 from app.multimodal.analyzer import ImageAnalyzer, image_analysis_document
+from app.observability.tracing import NullTracing, Tracing
 from app.multimodal.models import ImageInput
 from app.sources.citations import citation_ids, select_cited_sources
 from app.sources.models import PublicSource, Source
 from app.streaming.events import StreamEvent
+from app.visual_catalog.resolver import EquipmentResolver
 from app.visual_catalog.retrieval import (
     VisualCatalogRetriever,
     visual_matches_context,
@@ -18,6 +20,7 @@ from app.visual_catalog.retrieval import (
 logger = logging.getLogger(__name__)
 
 RAG_SEARCH_MESSAGE = "Buscando na base de conhecimento..."
+TRACE_TAGS = ("agentic-rag", "chat-stream")
 IMAGE_ANALYSIS_MESSAGE = "Analisando a imagem enviada..."
 VISUAL_SEARCH_MESSAGE = "Comparando com o catálogo visual..."
 QUERY_REWRITE_MESSAGE = "Reformulando a busca..."
@@ -47,6 +50,8 @@ class LangGraphStreamAdapter:
         visual_catalog_retriever_factory: (
             Callable[[], VisualCatalogRetriever] | None
         ) = None,
+        equipment_resolver: EquipmentResolver | None = None,
+        tracing: Tracing | None = None,
         max_rag_attempts: int,
         web_search_enabled: bool = True,
         max_duration_seconds: float = 120.0,
@@ -61,6 +66,8 @@ class LangGraphStreamAdapter:
         self._visual_catalog_retriever_factory = (
             visual_catalog_retriever_factory
         )
+        self._equipment_resolver = equipment_resolver
+        self._tracing = tracing or NullTracing()
         self._max_rag_attempts = max_rag_attempts
         self._web_search_enabled = web_search_enabled
         self._max_duration_seconds = max_duration_seconds
@@ -75,6 +82,32 @@ class LangGraphStreamAdapter:
         retrieval_filters: dict[str, Any] | None = None,
         images: list[ImageInput] | None = None,
         is_cancelled: Callable[[], bool] | None = None,
+    ) -> Iterator[StreamEvent]:
+        # The vision call and the graph run are separate LLM invocations; one
+        # root observation keeps them in the same trace instead of two
+        # unrelated ones for a single question.
+        with self._tracing.conversation(
+            session_id=thread_id or conversation_id,
+            tags=TRACE_TAGS,
+        ):
+            yield from self._stream(
+                conversation_id=conversation_id,
+                message=message,
+                thread_id=thread_id,
+                retrieval_filters=retrieval_filters,
+                images=images,
+                is_cancelled=is_cancelled,
+            )
+
+    def _stream(
+        self,
+        *,
+        conversation_id: str,
+        message: str,
+        thread_id: str | None,
+        retrieval_filters: dict[str, Any] | None,
+        images: list[ImageInput] | None,
+        is_cancelled: Callable[[], bool] | None,
     ) -> Iterator[StreamEvent]:
         started_at = self._clock()
         cancelled = is_cancelled or (lambda: False)
@@ -93,6 +126,7 @@ class LangGraphStreamAdapter:
             image_context = ""
             image_document = None
             image_reference_documents = []
+            resolved_equipment_ids: list[str] = []
             if pending_images:
                 if self._image_analyzer_factory is None:
                     raise RuntimeError("multimodal analyzer is not configured")
@@ -121,6 +155,21 @@ class LangGraphStreamAdapter:
                             "proprietário (menor distância é melhor):\n"
                             f"{visual_matches_context(image_reference_documents)}"
                         )
+                    if self._equipment_resolver is not None:
+                        # Candidates stay as citable evidence either way; only a
+                        # resolved equipment is allowed to narrow the manuals.
+                        resolution = self._equipment_resolver.resolve(
+                            [*analysis.identifiers, *analysis.visible_text],
+                            image_reference_documents,
+                        )
+                        resolved_equipment_ids = resolution.equipment_ids
+                        if resolution.candidates:
+                            image_context = (
+                                f"{image_context}\n\n"
+                                "Resolução de equipamento (confronte com as "
+                                "demais evidências antes de afirmar):\n"
+                                f"{resolution.context_text()}"
+                            )
                 pending_images.clear()
                 images = None
                 if cancelled():
@@ -136,6 +185,7 @@ class LangGraphStreamAdapter:
                 "image_context": image_context,
                 "image_document": image_document,
                 "image_reference_documents": image_reference_documents,
+                "resolved_equipment_ids": resolved_equipment_ids,
             }
             if retrieval_filters:
                 graph_input["retrieval_filters"] = retrieval_filters
@@ -144,7 +194,8 @@ class LangGraphStreamAdapter:
                 config={
                     "configurable": {
                         "thread_id": thread_id or conversation_id,
-                    }
+                    },
+                    "callbacks": self._tracing.callbacks(),
                 },
                 stream_mode=["updates"],
             )

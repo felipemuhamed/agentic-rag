@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any, Literal, Protocol
 
 from langchain_core.messages import AIMessage, HumanMessage
@@ -6,7 +7,6 @@ from app.graph.state import RagState
 from app.knowledge.retrieval.models import (
     RetrievalDiagnostics,
     RetrievalResult,
-    RetrievedDocument,
 )
 from app.llm.answer_generator import AnswerGenerator, NO_CONTEXT_ANSWER
 from app.llm.query_preparer import QueryPreparer
@@ -78,9 +78,12 @@ class RagNodes:
 
     def retrieve_rag(self, state: RagState) -> dict[str, object]:
         reference_documents = state.get("image_reference_documents", [])
+        # Every candidate stays as evidence, but only an equipment the resolver
+        # actually committed to may narrow the manuals: filtering on a lookalike
+        # hides the correct document instead of merely ranking it lower.
         filters = _equipment_filters(
             state.get("retrieval_filters"),
-            reference_documents,
+            state.get("resolved_equipment_ids", []),
         )
         result = (
             self._retriever.retrieve(state["search_query"], filters=filters)
@@ -219,13 +222,13 @@ def _question_with_image_context(question: str, image_context: str) -> str:
 
 def _equipment_filters(
     base_filters: dict[str, Any] | None,
-    reference_documents: list[RetrievedDocument],
+    resolved_equipment_ids: Sequence[str],
 ) -> dict[str, Any] | None:
-    equipment_ids = set()
-    for document in reference_documents:
-        equipment_id = document.metadata.get("equipment_id")
-        if isinstance(equipment_id, str) and equipment_id.strip():
-            equipment_ids.add(equipment_id.strip())
+    equipment_ids = {
+        equipment_id.strip()
+        for equipment_id in resolved_equipment_ids
+        if isinstance(equipment_id, str) and equipment_id.strip()
+    }
     if not equipment_ids:
         return base_filters
     equipment_filter: dict[str, Any] = {

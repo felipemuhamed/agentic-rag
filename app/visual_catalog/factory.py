@@ -7,6 +7,7 @@ from app.visual_catalog.embeddings import (
     SentenceTransformerVisualEmbeddingProvider,
     VisualEmbeddingProvider,
 )
+from app.visual_catalog.resolver import EquipmentResolver
 from app.visual_catalog.retrieval import VisualCatalogRetriever
 
 
@@ -47,4 +48,12 @@ def create_visual_catalog_retriever(
         ),
         max_results=config.visual_max_results,
         max_distance=config.visual_max_distance,
+    )
+
+
+def create_equipment_resolver(config: Settings = settings) -> EquipmentResolver:
+    return EquipmentResolver(
+        identifier_weight=config.equipment_identifier_weight,
+        min_confidence=config.equipment_min_confidence,
+        ambiguity_margin=config.equipment_ambiguity_margin,
     )

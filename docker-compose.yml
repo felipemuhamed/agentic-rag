@@ -26,6 +26,9 @@ x-knowledge-environment: &knowledge-environment
   VISUAL_EMBEDDING_DEVICE: ${VISUAL_EMBEDDING_DEVICE:-cpu}
   VISUAL_MAX_RESULTS: ${VISUAL_MAX_RESULTS:-3}
   VISUAL_MAX_DISTANCE: ${VISUAL_MAX_DISTANCE:-0.8}
+  EQUIPMENT_IDENTIFIER_WEIGHT: ${EQUIPMENT_IDENTIFIER_WEIGHT:-0.65}
+  EQUIPMENT_MIN_CONFIDENCE: ${EQUIPMENT_MIN_CONFIDENCE:-0.55}
+  EQUIPMENT_AMBIGUITY_MARGIN: ${EQUIPMENT_AMBIGUITY_MARGIN:-0.08}
   INGESTION_CHUNK_SIZE: ${INGESTION_CHUNK_SIZE:-700}
   INGESTION_CHUNK_OVERLAP: ${INGESTION_CHUNK_OVERLAP:-100}
   UPLOAD_ENABLED: ${UPLOAD_ENABLED:-true}
@@ -64,6 +67,11 @@ x-rag-environment: &rag-environment
   METRICS_ENABLED: ${METRICS_ENABLED:-true}
   METRICS_API_KEY: ${METRICS_API_KEY:-}
   STREAM_MAX_DURATION_SECONDS: ${STREAM_MAX_DURATION_SECONDS:-120}
+  WARMUP_ON_STARTUP: ${WARMUP_ON_STARTUP:-true}
+  LANGFUSE_ENABLED: ${LANGFUSE_ENABLED:-false}
+  LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-http://langfuse-web:3000}
+  LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+  LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
   WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-false}
   WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-tavily}
   WEB_SEARCH_MAX_RESULTS: ${WEB_SEARCH_MAX_RESULTS:-5}
@@ -75,6 +83,32 @@ x-rag-environment: &rag-environment
   EXTERNAL_BACKOFF_SECONDS: ${EXTERNAL_BACKOFF_SECONDS:-0.25}
   CIRCUIT_FAILURE_THRESHOLD: ${CIRCUIT_FAILURE_THRESHOLD:-5}
   CIRCUIT_RESET_SECONDS: ${CIRCUIT_RESET_SECONDS:-30}
+
+x-langfuse-environment: &langfuse-environment
+  DATABASE_URL: postgresql://postgres:${LANGFUSE_POSTGRES_PASSWORD:-langfuse}@langfuse-postgres:5432/postgres
+  SALT: ${LANGFUSE_SALT:-}
+  ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-}
+  CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+  CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+  CLICKHOUSE_USER: default
+  CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse}
+  # A single container is not a cluster; the default breaks the migrations.
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  REDIS_CONNECTION_STRING: redis://:${LANGFUSE_REDIS_PASSWORD:-langfuse}@langfuse-redis:6379
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_ROOT_USER:-minio}
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_ROOT_PASSWORD:-miniosecret}
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: ${LANGFUSE_S3_BUCKET:-langfuse}
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_MINIO_ROOT_USER:-minio}
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_ROOT_PASSWORD:-miniosecret}
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  TELEMETRY_ENABLED: ${LANGFUSE_TELEMETRY_ENABLED:-false}
 
 services:
   chroma:
@@ -190,6 +224,26 @@ services:
       chroma-ready:
         condition: service_completed_successfully
 
+  evaluate-image:
+    profiles: [tools]
+    image: agentic-rag-knowledge:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: knowledge
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+    entrypoint: [agentic-rag-evaluate-visual]
+    environment: *knowledge-environment
+    volumes:
+      - model-cache:/home/app/.cache/huggingface
+      - ./documents:/documents:ro
+      - ./evaluation:/evaluation:ro
+    init: true
+    depends_on:
+      chroma-ready:
+        condition: service_completed_successfully
+
   retrieve:
     profiles: [tools]
     image: agentic-rag-knowledge:${IMAGE_TAG:-local}
@@ -228,8 +282,136 @@ services:
       chroma-ready:
         condition: service_completed_successfully
 
+  langfuse-web:
+    profiles: [observability]
+    image: docker.langfuse.com/langfuse/langfuse:${LANGFUSE_VERSION:-4}
+    environment:
+      <<: *langfuse-environment
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-}
+      # Media is fetched by the browser, so this endpoint must be the one the
+      # browser can reach, not the internal service name.
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: ${LANGFUSE_MINIO_PUBLIC_ENDPOINT:-http://localhost:9090}
+      # Headless seeding creates the org, project, API keys and first user on
+      # the first boot, so the keys can be set before anyone opens the UI.
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-cpqd}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-CPQD}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-agentic-rag}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-Agentic RAG}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+    ports:
+      - "${LANGFUSE_BIND:-127.0.0.1}:${LANGFUSE_PORT:-3000}:3000"
+    restart: unless-stopped
+    init: true
+    depends_on: &langfuse-depends-on
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+
+  langfuse-worker:
+    profiles: [observability]
+    image: docker.langfuse.com/langfuse/langfuse-worker:${LANGFUSE_VERSION:-4}
+    environment: *langfuse-environment
+    restart: unless-stopped
+    init: true
+    depends_on: *langfuse-depends-on
+
+  langfuse-postgres:
+    profiles: [observability]
+    image: postgres:17
+    environment:
+      POSTGRES_PASSWORD: ${LANGFUSE_POSTGRES_PASSWORD:-langfuse}
+      # Postgres and ClickHouse must both be UTC or queries return empty.
+      TZ: UTC
+    volumes:
+      - langfuse-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  langfuse-clickhouse:
+    profiles: [observability]
+    image: clickhouse/clickhouse-server:${LANGFUSE_CLICKHOUSE_VERSION:-25.12}
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-langfuse}
+      TZ: UTC
+    volumes:
+      - langfuse-clickhouse-data:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    restart: unless-stopped
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+  langfuse-minio:
+    profiles: [observability]
+    image: cgr.dev/chainguard/minio:latest
+    entrypoint: sh
+    # The bucket has to exist before Langfuse writes its first event batch.
+    command: -c 'mkdir -p /data/${LANGFUSE_S3_BUCKET:-langfuse} && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${LANGFUSE_MINIO_ROOT_USER:-minio}
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_ROOT_PASSWORD:-miniosecret}
+    ports:
+      - "${LANGFUSE_BIND:-127.0.0.1}:${LANGFUSE_MINIO_PORT:-9090}:9000"
+    volumes:
+      - langfuse-minio-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
+  langfuse-redis:
+    profiles: [observability]
+    image: redis:7
+    command: >-
+      redis-server --requirepass ${LANGFUSE_REDIS_PASSWORD:-langfuse}
+      --maxmemory-policy noeviction
+    environment:
+      # Authenticates the healthcheck; a bare ping answers NOAUTH.
+      REDISCLI_AUTH: ${LANGFUSE_REDIS_PASSWORD:-langfuse}
+    volumes:
+      - langfuse-redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
 volumes:
   chroma-data:
   model-cache:
   checkpoint-data:
+  langfuse-postgres-data:
+  langfuse-clickhouse-data:
+  langfuse-clickhouse-logs:
+  langfuse-minio-data:
+  langfuse-redis-data:
   upload-data:

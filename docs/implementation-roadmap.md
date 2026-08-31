@@ -22,7 +22,12 @@ seguinte nao deve ser implementada antes disso.
 | 12 | Hardening de producao | Persistencia duravel, resiliencia, seguranca, observabilidade e deploy validados | Implementada; controles e falhas principais cobertos por testes |
 | 13 | Consulta multimodal por imagem | Imagem vira evidencia visual citavel e consulta para o RAG sem persistencia do binario | Implementada; validacao, analise, retrieval e SSE cobertos por testes |
 | 14 | Catalogo visual proprietario | Imagem recupera referencias visuais e restringe manuais pelo `equipment_id` | Implementada; ingestao visual, limiar, tenant, fusao e SSE cobertos por testes |
+| 15 | Upload de documentos e imagens por HTTP | Arquivo enviado vira job consultavel e chunks indexados sob o tenant | Implementada; upload, job, listagem e remocao cobertos por testes |
+| 16 | Warmup de modelos e prontidao honesta | `/ready` permanece 503 ate embedder, reranker e CLIP estarem carregados | Implementada; aguardando aceite em deploy real |
+| 17 | Resolucao de equipamento por multiplos sinais | Identificador lido na imagem prevalece sobre similaridade visual; abstencao no lugar do chute | Implementada; testes cobrem prevalencia, abstencao e ambiguidade |
+| 18 | Avaliacao da identificacao visual | Dataset versionado com positivos e negativos, e limiar recomendado por varredura | Implementada; aguardando aceite com fotos reais do catalogo |
 
+| 19 | Observabilidade de LLM com Langfuse self-hosted | Um trace por requisicao cobrindo visao e grafo, e o servico responde normalmente com a stack desligada | Implementada; degradacao e agrupamento cobertos por testes, aguardando aceite com a stack no ar |
 ## Iteracao intercalada: containers de desenvolvimento
 
 Apos a Etapa 2, foi solicitada uma base de containerizacao antes do retriever.
@@ -197,6 +202,55 @@ marcada como um cabecalho para que o numero chegue as citacoes.
 remove indice e arquivo, sempre sob o mesmo filtro de tenant do chat. Detalhes
 em [`uploads.md`](uploads.md).
 
-Com esta entrega, as 15 etapas foram implementadas. As proximas iteracoes devem
-ser dirigidas pelos resultados do corpus real, SLOs de producao e requisitos de
-escala.
+## Etapa 16 implementada
+
+O runtime ganhou `warmup()`, que carrega grafo, analisador de imagem e provider
+visual antes do primeiro request. A aplicacao dispara isso em uma thread durante
+o startup quando `WARMUP_ON_STARTUP` esta ativo, e a prontidao passou a exigir
+os modelos em memoria, nao apenas a ausencia de erro. Carregar fora do event
+loop mantem `/ready` respondendo 503 durante o processo, em vez de deixar a
+replica sem aceitar conexao e indistinguivel de uma que caiu.
+
+## Etapa 17 implementada
+
+`EquipmentResolver` decide qual equipamento a foto mostra fundindo o
+identificador lido por OCR com a similaridade visual, e devolve confianca com
+direito a abstencao. A distancia do Chroma vira cosseno, o casamento textual
+normaliza caixa, acentos e pontuacao, e valores curtos demais nao casam por
+substring.
+
+Os candidatos permanecem evidencia citavel em qualquer desfecho; apenas um
+equipamento efetivamente resolvido entra no filtro `$in` dos manuais. Essa
+separacao troca o modo de falha: antes um falso positivo escondia o manual
+correto, agora a busca segue sem filtro. O resolvedor nao importa LangChain, o
+que o mantem utilizavel pela imagem `knowledge` e pela avaliacao.
+
+## Etapa 18 implementada
+
+`agentic-rag-evaluate-visual` mede a identificacao com um dataset versionado e
+recomenda o limiar. Cada imagem e consultada uma vez com o portao aberto e a
+varredura reaplica os demais limiares sobre as distancias obtidas. Os desfechos
+separam acerto, erro, abstencao indevida e abstencao correta em negativos, e o
+limiar recomendado maximiza `accuracy - false_positive_rate`, tratando uma
+identificacao errada como tao cara quanto uma certa e util.
+
+## Etapa 19 implementada
+
+`app/observability/tracing.py` adiciona tracing opcional por Langfuse
+self-hosted. Cada requisicao abre uma observacao raiz e `propagate_attributes`
+mantem a analise visual e a execucao do grafo no mesmo trace, com o thread
+derivado como `session_id` -- nunca o `conversationId` publico.
+
+O modulo degrada para no-op em toda falha: pacote ausente, credencial faltando,
+cliente que nao constroi ou span que nao abre. Apenas a entrada do contexto e
+protegida, entao erros do proprio request continuam propagando. O cliente recebe
+host e chaves explicitamente das configuracoes, sem depender de qual variavel de
+ambiente a versao instalada do SDK honra.
+
+A stack (web, worker, Postgres, ClickHouse, Redis e MinIO) fica atras do profile
+`observability` do Compose, com os servicos prefixados para nao colidirem com os
+do projeto. Detalhes em [`tracing.md`](tracing.md).
+
+Com esta entrega, as etapas 1 a 19 foram implementadas. As proximas iteracoes
+devem ser dirigidas pelos resultados do corpus real, SLOs de producao e
+requisitos de escala.
