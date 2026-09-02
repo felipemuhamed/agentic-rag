@@ -162,11 +162,18 @@ imagem; `expected_equipment_id: null` marca um negativo -- equipamento fora do
 catalogo, onde a resposta certa e se abster.
 
 ```bash
+scripts/ambiente.sh testes    # inclui esta varredura como etapa 3/3
 docker compose run --rm evaluate-image \
   /evaluation/datasets/equipment-photos-v1.json \
   --images-root /documents \
   --thresholds 0.3 0.4 0.5 0.6 0.7 0.8
 ```
+
+A avaliacao le o catalogo ja indexado, entao rode `scripts/ambiente.sh demo`
+antes: e ele que carrega as fotos. Os `expected_equipment_id` do dataset usam os
+mesmos identificadores que a demonstracao indexa (`IPHONE-AIR`, `MOTO-G-2026`);
+com identificadores de outra sessao, todo caso sairia como `wrong` sem que nada
+estivesse errado.
 
 Cada imagem e consultada uma unica vez com o portao aberto no maior limiar; a
 varredura reaplica os demais sobre as distancias ja obtidas, entao acrescentar

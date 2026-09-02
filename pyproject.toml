@@ -28,6 +28,10 @@ rag = [
 web = [
     "httpx>=0.28,<1",
 ]
+monitoring = [
+    # Pins mcp<2: the adapter is not compatible with the v2 SDK.
+    "langchain-mcp-adapters>=0.3,<1",
+]
 tracing = [
     # v4 is the first release whose ingestion the self-hosted v4 server accepts.
     "langfuse>=4.7,<5",
@@ -37,6 +41,7 @@ dev = [
     "httpx>=0.28,<1",
     "langchain>=1.3,<2",
     "langgraph>=1.2,<2",
+    "langchain-mcp-adapters>=0.3,<1",
     "langgraph-checkpoint-sqlite>=3.1,<4",
     "pypdf>=6.1,<7",
     "pytest>=8.4,<9",
@@ -50,6 +55,7 @@ agentic-rag-retrieve = "app.knowledge.retrieval.cli:main"
 agentic-rag-ask = "app.graph.cli:main"
 agentic-rag-evaluate = "app.evaluation.cli:main"
 agentic-rag-evaluate-visual = "app.visual_catalog.evaluation_cli:main"
+agentic-rag-monitoring-tools = "app.monitoring.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["app*"]

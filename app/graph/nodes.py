@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Sequence
 from typing import Any, Literal, Protocol
 
@@ -9,6 +10,14 @@ from app.knowledge.retrieval.models import (
     RetrievalResult,
 )
 from app.llm.answer_generator import AnswerGenerator, NO_CONTEXT_ANSWER
+from app.monitoring.agent import MonitoringInvestigator, MonitoringRouter
+from app.monitoring.models import (
+    MONITORING_EMPTY_ANSWER,
+    MONITORING_UNAVAILABLE_ANSWER,
+    monitoring_context,
+    monitoring_documents,
+    monitoring_status,
+)
 from app.llm.query_preparer import QueryPreparer
 from app.llm.query_rewriter import QueryRewriter
 from app.llm.rag_grader import RagGrader
@@ -16,6 +25,9 @@ from app.llm.web_grader import WebGrader
 from app.sources.citations import select_cited_sources
 from app.sources.normalizer import normalize_rag_sources, normalize_web_sources
 from app.websearch.base import WebSearchProvider
+
+
+logger = logging.getLogger(__name__)
 
 
 class RetrievalService(Protocol):
@@ -39,6 +51,8 @@ class RagNodes:
         answer_generator: AnswerGenerator,
         max_rag_attempts: int,
         web_search_enabled: bool = True,
+        monitoring_router: MonitoringRouter | None = None,
+        monitoring_investigator: MonitoringInvestigator | None = None,
     ):
         if max_rag_attempts < 1:
             raise ValueError("max_rag_attempts must be at least 1")
@@ -51,17 +65,73 @@ class RagNodes:
         self._answer_generator = answer_generator
         self._max_rag_attempts = max_rag_attempts
         self._web_search_enabled = web_search_enabled
+        self._monitoring_router = monitoring_router
+        self._monitoring_investigator = monitoring_investigator
+
+    def route_question(self, state: RagState) -> Literal["monitoring", "knowledge"]:
+        """Decide whether the question needs live monitoring data first.
+
+        The classifier only runs when monitoring is wired, so a deployment
+        without it pays nothing and behaves exactly as before.
+        """
+        if self._monitoring_router is None or self._monitoring_investigator is None:
+            return "knowledge"
+        try:
+            decision = self._monitoring_router.decide(state["question"])
+        except Exception as error:
+            # A classifier that fails must not take the question with it. The
+            # documentation path answers most questions on its own, and a
+            # broken router turning every request into stream_failed is a far
+            # worse outcome than a documentation answer to an alarm question.
+            logger.warning(
+                "Monitoring router failed, answering from documentation: %s",
+                type(error).__name__,
+                exc_info=True,
+            )
+            return "knowledge"
+        return "monitoring" if decision.needs_monitoring else "knowledge"
+
+    def search_monitoring(self, state: RagState) -> dict[str, object]:
+        if self._monitoring_investigator is None:
+            return {
+                "monitoring_context": "",
+                "monitoring_documents": [],
+                "monitoring_status": "unavailable",
+            }
+        try:
+            observations = self._monitoring_investigator.investigate(
+                state["question"]
+            )
+        except Exception as error:
+            # Unreachable monitoring still lets the documentation path run --
+            # a hybrid question keeps the half the manuals answer -- but the
+            # status records that the live half was never obtained.
+            return {
+                "monitoring_context": "",
+                "monitoring_documents": [],
+                "monitoring_status": "unavailable",
+                "monitoring_reason": (
+                    f"monitoração indisponível ({type(error).__name__})"
+                ),
+            }
+        return {
+            "monitoring_context": monitoring_context(observations),
+            "monitoring_documents": monitoring_documents(observations),
+            "monitoring_status": monitoring_status(observations),
+            "monitoring_reason": f"{len(observations)} consulta(s) executada(s)",
+        }
 
     def prepare_query(self, state: RagState) -> dict[str, object]:
         question = state["question"].strip()
         if not question:
             raise ValueError("question must not be empty")
-        question_with_image = _question_with_image_context(
+        enriched_question = _question_with_context(
             question,
             state.get("image_context", ""),
+            state.get("monitoring_context", ""),
         )
         prepared_query = self._query_preparer.prepare(
-            question_with_image,
+            enriched_question,
             state.get("messages", []),
         ).strip()
         if not prepared_query:
@@ -96,6 +166,10 @@ class RagNodes:
         image_document = state.get("image_document")
         if image_document is not None:
             evidence_documents.insert(0, image_document)
+        # Live data leads: it is the premise the question was asked about.
+        evidence_documents = (
+            list(state.get("monitoring_documents", [])) + evidence_documents
+        )
         if evidence_documents:
             documents = evidence_documents + documents
             diagnostics = RetrievalDiagnostics(
@@ -129,6 +203,12 @@ class RagNodes:
     ) -> Literal["answer", "rewrite", "web", "no_answer"]:
         if state["rag_relevant"]:
             return "answer"
+        # A question that was sent to monitoring and came back with nothing has
+        # no second source: neither the manuals nor the web know the current
+        # state of this infrastructure. Rewriting the query or searching the
+        # web here would dress an absent datum up as an answer.
+        if state.get("monitoring_status") in ("empty", "unavailable"):
+            return "no_answer"
         if state["retrieval_attempts"] < self._max_rag_attempts:
             return "rewrite"
         return "web" if self._web_search_enabled else "no_answer"
@@ -183,9 +263,10 @@ class RagNodes:
             "sources": [source.to_public() for source in cited_sources],
             "messages": [
                 HumanMessage(
-                    content=_question_with_image_context(
+                    content=_question_with_context(
                         state["question"],
                         state.get("image_context", ""),
+                        state.get("monitoring_context", ""),
                     )
                 ),
                 AIMessage(content=answer),
@@ -193,31 +274,55 @@ class RagNodes:
         }
 
     def no_answer(self, state: RagState) -> dict[str, object]:
+        answer = _no_answer_text(state.get("monitoring_status"))
         return {
-            "answer": NO_CONTEXT_ANSWER,
+            "answer": answer,
             "source": "none",
             "sources": [],
             "messages": [
                 HumanMessage(
-                    content=_question_with_image_context(
+                    content=_question_with_context(
                         state["question"],
                         state.get("image_context", ""),
+                        state.get("monitoring_context", ""),
                     )
                 ),
-                AIMessage(content=NO_CONTEXT_ANSWER),
+                AIMessage(content=answer),
             ],
         }
 
 
-def _question_with_image_context(question: str, image_context: str) -> str:
-    normalized_context = image_context.strip()
-    if not normalized_context:
-        return question.strip()
-    return (
-        f"{question.strip()}\n\n"
-        "Análise visual da imagem enviada (trate como dados observados):\n"
-        f"{normalized_context}"
-    )
+def _no_answer_text(monitoring_status: object) -> str:
+    """Say which kind of nothing was found.
+
+    "Não encontrei evidências" is misleading when the monitoring system was
+    consulted and answered: the operator needs to know whether there are no
+    alarms or whether the question never reached Zabbix.
+    """
+    if monitoring_status == "unavailable":
+        return MONITORING_UNAVAILABLE_ANSWER
+    if monitoring_status == "empty":
+        return MONITORING_EMPTY_ANSWER
+    return NO_CONTEXT_ANSWER
+
+
+def _question_with_context(
+    question: str,
+    image_context: str,
+    monitoring_context_text: str = "",
+) -> str:
+    parts = [question.strip()]
+    if image_context.strip():
+        parts.append(
+            "Análise visual da imagem enviada (trate como dados observados):\n"
+            f"{image_context.strip()}"
+        )
+    if monitoring_context_text.strip():
+        parts.append(
+            "Dados ao vivo da monitoração (trate como observações do estado "
+            f"atual):\n{monitoring_context_text.strip()}"
+        )
+    return "\n\n".join(parts)
 
 
 def _equipment_filters(

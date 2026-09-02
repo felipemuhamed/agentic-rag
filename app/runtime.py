@@ -1,3 +1,4 @@
+import logging
 from collections.abc import Callable
 from threading import RLock
 from typing import Any
@@ -5,10 +6,18 @@ from typing import Any
 from app.graph.factory import create_rag_graph
 from app.knowledge.embeddings import SentenceTransformerEmbeddingProvider
 from app.knowledge.embeddings.base import EmbeddingProvider
+from app.knowledge.retrieval.factory import create_knowledge_retriever
+from app.knowledge.retrieval.retriever import KnowledgeRetriever
 from app.knowledge.vectorstore.base import ManagedKnowledgeVectorStore
 from app.knowledge.vectorstore.factory import create_knowledge_vector_store
 from app.multimodal.analyzer import ImageAnalyzer
 from app.multimodal.factory import create_image_analyzer
+from app.monitoring.bridge import AsyncBridge
+from app.monitoring.factory import (
+    create_monitoring_investigator,
+    create_monitoring_router,
+    create_toolset,
+)
 from app.observability.tracing import Tracing, create_tracing
 from app.persistence.checkpointer import CheckpointerHandle
 from app.settings import Settings
@@ -23,6 +32,9 @@ from app.visual_catalog.factory import (
     create_visual_vector_store,
 )
 from app.visual_catalog.retrieval import VisualCatalogRetriever
+
+
+logger = logging.getLogger(__name__)
 
 
 class RagRuntime:
@@ -52,6 +64,9 @@ class RagRuntime:
         self._visual_vector_store: ManagedKnowledgeVectorStore | None = None
         self._document_library: DocumentLibraryService | None = None
         self._tracing: Tracing | None = None
+        self._retriever: KnowledgeRetriever | None = None
+        self._bridge: AsyncBridge | None = None
+        self._monitoring: tuple[Any, Any] | None = None
         self._lock = RLock()
         self._last_error: str | None = None
         # Lazy mode has nothing to wait for, so it starts warm. With warmup
@@ -107,6 +122,38 @@ class RagRuntime:
                 )
             return self._image_analyzer
 
+    def monitoring(self) -> tuple[Any, Any]:
+        """Return the (router, investigator) pair, or (None, None) if off.
+
+        A monitoring server that cannot be reached must not stop the service
+        from answering questions the documentation already covers, so failure
+        here degrades to the knowledge-only pipeline.
+        """
+        with self._lock:
+            if self._monitoring is not None:
+                return self._monitoring
+            if not self._config.monitoring_enabled:
+                self._monitoring = (None, None)
+                return self._monitoring
+            try:
+                self._bridge = AsyncBridge()
+                toolset = create_toolset(self._config, bridge=self._bridge)
+                self._monitoring = (
+                    create_monitoring_router(self._config),
+                    create_monitoring_investigator(
+                        self._config,
+                        toolset=toolset,
+                    ),
+                )
+            except Exception as error:
+                logger.error(
+                    "Monitoring is enabled but could not be initialised (%s); "
+                    "continuing without live data",
+                    type(error).__name__,
+                )
+                self._monitoring = (None, None)
+            return self._monitoring
+
     def tracing(self) -> Tracing:
         with self._lock:
             if self._tracing is None:
@@ -127,6 +174,18 @@ class RagRuntime:
                     )
                 )
             return self._visual_catalog_retriever
+
+    def retriever(self) -> KnowledgeRetriever:
+        with self._lock:
+            if self._retriever is None:
+                self._retriever = self._create(
+                    lambda: create_knowledge_retriever(
+                        self._config,
+                        vector_store=self.knowledge_vector_store(),
+                        embedding_provider=self.embedding_provider(),
+                    )
+                )
+            return self._retriever
 
     def embedding_provider(self) -> EmbeddingProvider:
         with self._lock:
@@ -209,6 +268,11 @@ class RagRuntime:
             self._image_analyzer = None
             self._visual_catalog_retriever = None
             self._document_library = None
+            self._retriever = None
+            self._monitoring = None
+            if self._bridge is not None:
+                self._bridge.close()
+                self._bridge = None
             self._embedding_provider = None
             self._visual_embedding_provider = None
             self._knowledge_vector_store = None
@@ -228,11 +292,14 @@ class RagRuntime:
         config: Settings,
         checkpointer: Any,
     ) -> StreamableRagGraph:
+        monitoring_router, monitoring_investigator = self.monitoring()
         return create_rag_graph(
             config,
             checkpointer=checkpointer,
             vector_store=self.knowledge_vector_store(),
             embedding_provider=self.embedding_provider(),
+            monitoring_router=monitoring_router,
+            monitoring_investigator=monitoring_investigator,
         )
 
     def _create(self, factory: Callable[[], Any]) -> Any:

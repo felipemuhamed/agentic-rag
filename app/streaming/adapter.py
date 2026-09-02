@@ -20,6 +20,7 @@ from app.visual_catalog.retrieval import (
 logger = logging.getLogger(__name__)
 
 RAG_SEARCH_MESSAGE = "Buscando na base de conhecimento..."
+MONITORING_MESSAGE = "Consultando a monitoração..."
 TRACE_TAGS = ("agentic-rag", "chat-stream")
 IMAGE_ANALYSIS_MESSAGE = "Analisando a imagem enviada..."
 VISUAL_SEARCH_MESSAGE = "Comparando com o catálogo visual..."
@@ -199,6 +200,7 @@ class LangGraphStreamAdapter:
                 },
                 stream_mode=["updates"],
             )
+            monitoring_status = ""
             for mode, data in internal_stream:
                 if cancelled():
                     return
@@ -209,13 +211,33 @@ class LangGraphStreamAdapter:
                         if not isinstance(update, Mapping):
                             continue
 
-                        if node_name == "retrieve_rag":
+                        if node_name == "search_monitoring":
+                            monitoring_status = str(
+                                update.get("monitoring_status") or ""
+                            )
+                            if last_status != "monitoring_search":
+                                yield _status(
+                                    "monitoring_search",
+                                    MONITORING_MESSAGE,
+                                )
+                                last_status = "monitoring_search"
+                                yield _status("rag_search", RAG_SEARCH_MESSAGE)
+                                last_status = "rag_search"
+
+                        elif node_name == "retrieve_rag":
                             attempts = update.get("retrieval_attempts")
                             if isinstance(attempts, int):
                                 retrieval_attempts = attempts
 
                         elif node_name == "grade_rag":
                             if update.get("rag_relevant") is True:
+                                if last_status != "generating":
+                                    yield _status("generating", GENERATING_MESSAGE)
+                                    last_status = "generating"
+                            elif monitoring_status in ("empty", "unavailable"):
+                                # The graph refuses here instead of rewriting or
+                                # searching the web, so announcing either would
+                                # narrate work that will never happen.
                                 if last_status != "generating":
                                     yield _status("generating", GENERATING_MESSAGE)
                                     last_status = "generating"
@@ -274,7 +296,12 @@ class LangGraphStreamAdapter:
                 },
             )
         except Exception as error:
-            logger.error("RAG stream failed: %s", type(error).__name__)
+            # exc_info goes to the server log only; the client keeps the
+            # generic message. Without the traceback, a failure like this is
+            # diagnosed by guesswork.
+            logger.error(
+                "RAG stream failed: %s", type(error).__name__, exc_info=True
+            )
             yield StreamEvent(
                 "error",
                 {

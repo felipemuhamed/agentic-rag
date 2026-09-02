@@ -3,21 +3,22 @@
   "cases": [
     {
       "image": "motog86_2.jpeg",
-      "expected_equipment_id": "OLT-9001",
+      "expected_equipment_id": "MOTO-G-2026",
       "identifiers": [],
       "note": "Positivo real: segunda foto do mesmo aparelho, diferente da que foi indexada. E este caso que mede separacao de verdade."
     },
     {
       "image": "moto.jpeg",
-      "expected_equipment_id": "OLT-9001",
+      "expected_equipment_id": "MOTO-G-2026",
       "identifiers": [],
       "note": "Degenerado: e a propria foto indexada, entao a distancia e zero por construcao. Serve apenas como sanidade do encanamento, nao como evidencia de qualidade."
     },
     {
       "image": "iphone.jpeg",
-      "expected_equipment_id": "OLT-9000",
+      "expected_equipment_id": "IPHONE-AIR",
       "identifiers": [],
       "note": "Degenerado pelo mesmo motivo do caso anterior."
     }
-  ]
+  ],
+  "description": "Fotos de equipamento e o equipmentId esperado. Os identificadores acompanham os que scripts/demo-rag.sh indexa, para que a avaliacao possa rodar logo depois da demonstracao sem marcar tudo como errado."
 }

@@ -72,6 +72,12 @@ x-rag-environment: &rag-environment
   LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-http://langfuse-web:3000}
   LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
   LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+  MONITORING_ENABLED: ${MONITORING_ENABLED:-false}
+  MONITORING_MCP_URL: ${MONITORING_MCP_URL:-}
+  MONITORING_MCP_TOKEN: ${MONITORING_MCP_TOKEN:-}
+  MONITORING_ALLOWED_TOOLS: ${MONITORING_ALLOWED_TOOLS:-}
+  MONITORING_MAX_ITERATIONS: ${MONITORING_MAX_ITERATIONS:-3}
+  MONITORING_TIMEOUT_SECONDS: ${MONITORING_TIMEOUT_SECONDS:-30}
   WEB_SEARCH_ENABLED: ${WEB_SEARCH_ENABLED:-false}
   WEB_SEARCH_PROVIDER: ${WEB_SEARCH_PROVIDER:-tavily}
   WEB_SEARCH_MAX_RESULTS: ${WEB_SEARCH_MAX_RESULTS:-5}
@@ -243,6 +249,51 @@ services:
     depends_on:
       chroma-ready:
         condition: service_completed_successfully
+
+  monitoring-tools:
+    profiles: [tools]
+    image: agentic-rag-rag:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: rag
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+        LLM_PROVIDER_PACKAGE: ${LLM_PROVIDER_PACKAGE:-langchain-openrouter==0.2.8}
+    env_file:
+      - .env
+    environment: *rag-environment
+    # Lista o que o servidor MCP publica. A allowlist precisa nomear as
+    # ferramentas exatamente como o servidor as chama, e errar um nome produz
+    # uma allowlist vazia em silencio.
+    entrypoint: [agentic-rag-monitoring-tools]
+    init: true
+
+  zabbix-falso:
+    # Servidor MCP de MENTIRA, so para demonstrar a POC sem um Zabbix por perto.
+    # Nao suba isto junto de um ambiente real: os dados sao inventados.
+    profiles: [demo]
+    image: agentic-rag-rag:${IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: rag
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.11}
+        LLM_PROVIDER_PACKAGE: ${LLM_PROVIDER_PACKAGE:-langchain-openrouter==0.2.8}
+    entrypoint:
+      - python
+      - /scripts/zabbix-falso.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+    volumes:
+      - ./scripts:/scripts:ro
+    ports:
+      - "${ZABBIX_FALSO_BIND:-127.0.0.1}:${ZABBIX_FALSO_PORT:-8080}:8080"
+    init: true
+    restart: unless-stopped
 
   retrieve:
     profiles: [tools]

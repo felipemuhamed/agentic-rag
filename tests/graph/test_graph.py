@@ -5,6 +5,7 @@ from app.knowledge.retrieval.models import (
     RetrievedDocument,
 )
 from app.llm.answer_generator import LangChainAnswerGenerator, NO_CONTEXT_ANSWER
+from app.monitoring.models import MONITORING_EMPTY_ANSWER
 from app.llm.rag_grader import RagGrade
 from app.llm.web_grader import WebGrade
 from app.sources.models import Source
@@ -185,6 +186,8 @@ def test_linear_graph_answers_from_retrieved_documents() -> None:
     edges = {(edge.source, edge.target) for edge in graph_view.edges}
     assert edges == {
         ("__start__", "prepare_query"),
+        ("__start__", "search_monitoring"),
+        ("search_monitoring", "prepare_query"),
         ("prepare_query", "retrieve_rag"),
         ("retrieve_rag", "grade_rag"),
         ("grade_rag", "generate_answer"),
@@ -496,4 +499,57 @@ def test_graph_answers_from_web_only_after_rag_is_exhausted() -> None:
         "https://www.keycloak.org/docs/latest/securing_apps/",
         "answer:Como configurar OAuth no Keycloak?:"
         "https://www.keycloak.org/docs/latest/securing_apps/",
+    ]
+
+
+class StubRouter:
+    def __init__(self, needs_monitoring: bool):
+        self.needs_monitoring = needs_monitoring
+
+    def decide(self, question: str) -> object:
+        return type(
+            "Decision",
+            (),
+            {"needs_monitoring": self.needs_monitoring, "reason": "teste"},
+        )()
+
+
+class EmptyInvestigator:
+    def __init__(self, events: list[str]):
+        self.events = events
+
+    def investigate(self, question: str) -> list[object]:
+        self.events.append(f"monitoring:{question}")
+        return []
+
+
+def test_a_live_question_with_no_live_data_refuses_instead_of_searching_the_web() -> None:
+    events: list[str] = []
+    graph = build_rag_graph(
+        retriever=RecordingRetriever(events, []),
+        grader=RecordingGrader(events, relevant=False),
+        query_preparer=IdentityQueryPreparer(),
+        query_rewriter=RewriterThatMustNotRun(),
+        web_search=WebFallbackThatMustNotRun(),
+        web_grader=WebGraderThatMustNotRun(),
+        answer_generator=LangChainAnswerGenerator(ModelThatMustNotRun()),
+        max_rag_attempts=3,
+        web_search_enabled=True,
+        monitoring_router=StubRouter(needs_monitoring=True),
+        monitoring_investigator=EmptyInvestigator(events),
+    )
+
+    result = graph.invoke({"question": "Quais os últimos alertas?"})
+
+    # The web cannot know this infrastructure's current state, so the answer
+    # says nothing was found rather than borrowing a plausible one.
+    assert result == {
+        "answer": MONITORING_EMPTY_ANSWER,
+        "source": "none",
+        "sources": [],
+    }
+    assert events == [
+        "monitoring:Quais os últimos alertas?",
+        "retrieve:Quais os últimos alertas?",
+        "grade:Quais os últimos alertas?:",
     ]

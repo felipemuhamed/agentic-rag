@@ -26,8 +26,8 @@ seguinte nao deve ser implementada antes disso.
 | 16 | Warmup de modelos e prontidao honesta | `/ready` permanece 503 ate embedder, reranker e CLIP estarem carregados | Implementada; aguardando aceite em deploy real |
 | 17 | Resolucao de equipamento por multiplos sinais | Identificador lido na imagem prevalece sobre similaridade visual; abstencao no lugar do chute | Implementada; testes cobrem prevalencia, abstencao e ambiguidade |
 | 18 | Avaliacao da identificacao visual | Dataset versionado com positivos e negativos, e limiar recomendado por varredura | Implementada; aguardando aceite com fotos reais do catalogo |
-
 | 19 | Observabilidade de LLM com Langfuse self-hosted | Um trace por requisicao cobrindo visao e grafo, e o servico responde normalmente com a stack desligada | Implementada; degradacao e agrupamento cobertos por testes, aguardando aceite com a stack no ar |
+| 20 | Consulta a monitoracao ao vivo via MCP | Pergunta sobre alarmes consulta o servidor MCP e a resposta cita a ferramenta que produziu o dado | Implementada; roteamento, allowlist, ponte e degradacao cobertos por testes |
 ## Iteracao intercalada: containers de desenvolvimento
 
 Apos a Etapa 2, foi solicitada uma base de containerizacao antes do retriever.
@@ -251,6 +251,44 @@ A stack (web, worker, Postgres, ClickHouse, Redis e MinIO) fica atras do profile
 `observability` do Compose, com os servicos prefixados para nao colidirem com os
 do projeto. Detalhes em [`tracing.md`](tracing.md).
 
-Com esta entrega, as etapas 1 a 19 foram implementadas. As proximas iteracoes
+## Etapa 20 implementada
+
+`app/monitoring/` faz o agente consultar um servidor MCP de monitoracao quando a
+pergunta pede dado ao vivo. Um classificador decide antes do `prepare_query`, de
+modo que o alarme recuperado passa a fazer parte da consulta que busca os
+manuais; se rodasse depois, a busca textual ja teria acontecido com a pergunta
+vaga.
+
+Cada chamada de ferramenta vira `RetrievedDocument` com locator
+`zabbix:<ferramenta>` e os argumentos que a produziram, preservando o contrato de
+citacao. A fronteira de seguranca e `MONITORING_ALLOWED_TOOLS`: so as ferramentas
+nomeadas chegam ao modelo, entao um servidor que publica a API de escrita nao e
+alcancavel a partir de um chat.
+
+O pipeline e sincrono e o cliente MCP e async-only, entao `bridge.py` mantem um
+event loop proprio numa thread. Falha de ferramenta vira observacao de erro em vez
+de excecao, e monitoracao indisponivel degrada para documentacao apenas. Detalhes
+em [`monitoring.md`](monitoring.md).
+
+## Etapa 21 implementada
+
+Uma consulta ao Zabbix passa a terminar de tres formas distintas em vez de duas.
+Vazio e um fato -- `problem_get` devolvendo `[]` significa que nao ha alarmes --
+e continua virando evidencia citavel, com o corpo escrito em palavras para o
+gerador nao ler `[]` como ausencia de contexto. Ja "nao consegui consultar" e a
+falta do fato.
+
+As duas cortam o fallback: uma pergunta que foi a monitoracao e voltou sem dado
+nao reescreve a consulta nem cai na web, porque nenhum manual e nenhuma pagina da
+internet sabe o estado atual da infraestrutura do cliente. O adaptador de stream
+acompanha a decisao, para nao anunciar uma reformulacao que nao vai acontecer.
+
+Os scripts da POC cobrem o caminho: `scripts/demo-monitoracao.sh` demonstra os
+quatro casos e `scripts/zabbix-falso.py` (profile `demo`) permite rodar isso sem
+um Zabbix. Nesta etapa tambem se corrigiu o `Dockerfile`, que construia os wheels
+de `tracing` e `monitoring` mas instalava so `[knowledge,rag,web]`: as duas
+features estavam ausentes da imagem.
+
+Com esta entrega, as etapas 1 a 21 foram implementadas. As proximas iteracoes
 devem ser dirigidas pelos resultados do corpus real, SLOs de producao e
 requisitos de escala.

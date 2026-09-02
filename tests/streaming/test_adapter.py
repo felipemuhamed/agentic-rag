@@ -434,6 +434,54 @@ def test_adapter_exposes_rewrite_status_without_rewrite_tokens() -> None:
     assert events[-1].event == "done"
 
 
+def test_a_dead_end_monitoring_question_never_announces_a_rewrite() -> None:
+    graph = FakeGraph(
+        [
+            (
+                "updates",
+                {
+                    "search_monitoring": {
+                        "monitoring_documents": [],
+                        "monitoring_status": "empty",
+                    }
+                },
+            ),
+            ("updates", {"retrieve_rag": {"retrieval_attempts": 1}}),
+            ("updates", {"grade_rag": {"rag_relevant": False}}),
+            (
+                "updates",
+                {
+                    "no_answer": {
+                        "answer": "Consultei o sistema de monitoração e nada veio.",
+                        "source": "none",
+                        "sources": [],
+                    }
+                },
+            ),
+        ]
+    )
+    adapter = LangGraphStreamAdapter(
+        graph_factory=lambda: graph,
+        max_rag_attempts=3,
+        web_search_enabled=True,
+    )
+
+    events = list(adapter.stream(conversation_id="c-1", message="Quais alertas?"))
+
+    statuses = [event.data["stage"] for event in events if event.event == "status"]
+    # The graph refuses right after the grader, so promising a rewrite or an
+    # external search would narrate work that never happens.
+    # The leading rag_search is emitted before the graph reveals its route.
+    assert statuses == [
+        "rag_search",
+        "monitoring_search",
+        "rag_search",
+        "generating",
+    ]
+    assert "query_rewrite" not in statuses
+    assert "web_search" not in statuses
+
+
 def test_no_answer_is_sent_as_final_token_before_done() -> None:
     graph = FakeGraph(
         [

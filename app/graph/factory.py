@@ -1,3 +1,5 @@
+from typing import Any
+
 from langgraph.checkpoint.memory import InMemorySaver
 
 from app.graph.builder import build_rag_graph
@@ -20,6 +22,8 @@ def create_rag_graph(
     checkpointer=None,
     vector_store: KnowledgeVectorStore | None = None,
     embedding_provider: EmbeddingProvider | None = None,
+    monitoring_router: Any = None,
+    monitoring_investigator: Any = None,
 ):
     model = create_chat_model(
         config.llm_model,
@@ -64,6 +68,8 @@ def create_rag_graph(
             max_attempts=config.llm_max_attempts,
         ),
         answer_generator=answer_generator,
+        monitoring_router=monitoring_router,
+        monitoring_investigator=monitoring_investigator,
         max_rag_attempts=config.max_rag_attempts,
         web_search_enabled=config.web_search_enabled,
         checkpointer=(

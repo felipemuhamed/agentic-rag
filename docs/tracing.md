@@ -72,6 +72,7 @@ LANGFUSE_INIT_USER_PASSWORD=uma-senha-forte
 Os prefixos `lf_pk_` e `lf_sk_` sao exigidos pelo Langfuse v4. Entao:
 
 ```bash
+scripts/ambiente.sh langfuse       # equivale ao comando abaixo, com avisos
 docker compose --profile observability up -d
 ```
 
@@ -88,6 +89,11 @@ docker compose up -d --force-recreate api
 Confirme no log do `api` a linha `Langfuse tracing enabled`. Se aparecer
 `continuing without tracing`, a mensagem diz qual das tres causas ocorreu:
 pacote ausente, credencial faltando ou cliente que nao construiu.
+
+"Pacote ausente" tem uma causa historica que vale registrar: o `Dockerfile`
+construia o wheel do extra `tracing` mas instalava so `[knowledge,rag,web]`, e a
+imagem subia sem `langfuse`. Um wheel em `/wheels` que ninguem instala nao esta
+na imagem; a linha de instalacao tem de nomear o extra.
 
 Fora do Compose, aponte `LANGFUSE_BASE_URL` para `http://localhost:3000` -- o
 default `http://langfuse-web:3000` so resolve dentro da rede do Compose.

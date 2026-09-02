@@ -221,9 +221,10 @@ limites, codigos de erro e isolamento por tenant estao em
 Para uma demonstracao completa em curl, com os arquivos de `documents/`:
 
 ```bash
-scripts/ambiente.sh subir     # constroi a imagem, sobe chroma + api e espera o /ready
-scripts/ambiente.sh aquecer   # opcional: carrega os modelos antes da apresentacao
-scripts/demo-rag.sh           # roteiro da demonstracao
+scripts/ambiente.sh subir        # constroi a imagem, sobe chroma + api e espera o /ready
+scripts/ambiente.sh aquecer      # opcional: carrega os modelos antes da apresentacao
+scripts/ambiente.sh demo         # roteiro multimodal: identifica o aparelho pela foto
+scripts/ambiente.sh monitoracao  # roteiro de alarmes ao vivo, do zero
 ```
 
 No roteiro, nenhuma pergunta cita o aparelho: a indicacao vem da foto anexada ao
@@ -233,6 +234,20 @@ segura, porque o manual dele ainda nao foi indexado; carrega esse manual e faz a
 mesma pergunta com a mesma foto, agora respondida. `scripts/ambiente.sh` ainda
 aceita `status`, `logs`, `parar` e `limpar`. A imagem precisa ser reconstruida
 porque os endpoints de upload dependem de `python-multipart` e `pypdf`.
+
+`scripts/ambiente.sh monitoracao` mostra o outro eixo e cuida de tudo sozinho:
+sobe a API se preciso, reconstroi a imagem se ela estiver sem os extras, sobe um
+servidor MCP de mentira (dados inventados, so para exercitar o caminho numa
+maquina sem Zabbix), escreve as chaves `MONITORING_*` no `.env`, recria a API
+para que ela as leia, lista as ferramentas publicadas e so entao roda o roteiro.
+Nele o classificador decide se a pergunta precisa de dado ao vivo, so entao o
+Zabbix e consultado, e uma consulta que volta vazia termina em "nao encontrei"
+em vez de escorregar para a web.
+
+Os passos tambem existem soltos: `scripts/ambiente.sh zabbix-falso` sobe e
+configura so o servidor falso, `scripts/ambiente.sh ferramentas` lista o que um
+servidor MCP publica -- que e como se descobrem os nomes exatos para a allowlist
+-- e `scripts/ambiente.sh langfuse` sobe a stack de tracing.
 
 Depois de ingerir os documentos, o retriever pode ser executado isoladamente:
 
@@ -259,13 +274,26 @@ tambem os remove e apaga o conhecimento indexado e os threads. Consulte
 ## Testar
 
 ```bash
+scripts/ambiente.sh testes              # suite + avaliacao offline + avaliacao visual
+scripts/ambiente.sh testes --com-demos  # e mais os dois roteiros interativos
+```
+
+Sao quatro camadas independentes: a suite automatizada (`pytest`), a avaliacao
+offline da recuperacao contra o baseline versionado, a varredura de limiar da
+identificacao visual e os dois roteiros em curl. As duas primeiras rodam em
+qualquer maquina, sem Chroma, modelo baixado ou credencial; a terceira exige o
+catalogo visual indexado, o que `scripts/ambiente.sh demo` faz.
+
+Para rodar so a suite:
+
+```bash
 pytest
 ```
 
 O plano de entregas e os gates entre iteracoes estao em
 [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md).
 Os controles e o checklist de deploy estao em
-[`docs/production.md`](docs/production.md), o tracing de LLM em [`docs/tracing.md`](docs/tracing.md).
+[`docs/production.md`](docs/production.md), o tracing de LLM em [`docs/tracing.md`](docs/tracing.md), a consulta a monitoracao em [`docs/monitoring.md`](docs/monitoring.md).
 
 ## Executar a avaliacao
 

@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from app.graph.nodes import RagNodes
 from app.knowledge.retrieval.models import (
     RetrievalDiagnostics,
@@ -7,6 +9,11 @@ from app.knowledge.retrieval.models import (
 from app.llm.answer_generator import NO_CONTEXT_ANSWER
 from app.llm.rag_grader import RagGrade
 from app.llm.web_grader import WebGrade
+from app.monitoring.models import (
+    MONITORING_EMPTY_ANSWER,
+    MONITORING_UNAVAILABLE_ANSWER,
+    MonitoringObservation,
+)
 from app.sources.models import Source
 from app.websearch.models import WebSearchResult
 
@@ -305,6 +312,219 @@ def test_visual_context_drives_retrieval_and_becomes_citable_evidence() -> None:
     assert retriever.queries == [prepared["search_query"]]
     assert retrieved["documents"] == [image_document, make_document()]
     assert retrieved["retrieval_diagnostics"].returned_count == 2
+
+
+class StubMonitoringRouter:
+    def __init__(self, needs_monitoring: bool):
+        self.needs_monitoring = needs_monitoring
+        self.questions: list[str] = []
+
+    def decide(self, question: str):
+        self.questions.append(question)
+        return SimpleNamespace(
+            needs_monitoring=self.needs_monitoring,
+            reason="teste",
+        )
+
+
+class StubInvestigator:
+    def __init__(self, observations=None, error: Exception | None = None):
+        self.observations = observations or []
+        self.error = error
+
+    def investigate(self, question: str):
+        if self.error is not None:
+            raise self.error
+        return self.observations
+
+
+def make_nodes(**overrides):
+    defaults = dict(
+        retriever=StubRetriever([make_document()]),
+        grader=StubGrader(),
+        query_preparer=StubQueryPreparer(),
+        query_rewriter=StubQueryRewriter(),
+        web_search=StubWebSearch(),
+        web_grader=StubWebGrader(),
+        answer_generator=StubAnswerGenerator(),
+        max_rag_attempts=1,
+    )
+    defaults.update(overrides)
+    return RagNodes(**defaults)
+
+
+def test_questions_skip_monitoring_when_it_is_not_configured() -> None:
+    nodes = make_nodes()
+
+    # A deployment without monitoring must behave exactly as before, and must
+    # not pay for a classifier call.
+    assert nodes.route_question({"question": "quais os alertas?"}) == "knowledge"
+
+
+def test_router_sends_a_monitoring_question_to_the_live_data_path() -> None:
+    router = StubMonitoringRouter(needs_monitoring=True)
+    nodes = make_nodes(
+        monitoring_router=router,
+        monitoring_investigator=StubInvestigator(),
+    )
+
+    assert nodes.route_question({"question": "quais os últimos alertas?"}) == (
+        "monitoring"
+    )
+    assert router.questions == ["quais os últimos alertas?"]
+
+
+def test_documentation_question_stays_on_the_knowledge_path() -> None:
+    nodes = make_nodes(
+        monitoring_router=StubMonitoringRouter(needs_monitoring=False),
+        monitoring_investigator=StubInvestigator(),
+    )
+
+    assert nodes.route_question({"question": "como reiniciar?"}) == "knowledge"
+
+
+def test_an_executed_query_with_no_rows_is_reported_as_empty() -> None:
+    nodes = make_nodes(
+        monitoring_router=StubMonitoringRouter(needs_monitoring=True),
+        monitoring_investigator=StubInvestigator(
+            [MonitoringObservation(tool="problem_get", arguments={}, content="[]")]
+        ),
+    )
+
+    update = nodes.search_monitoring({"question": "quais os alertas?"})
+
+    assert update["monitoring_status"] == "empty"
+    # The emptiness still travels as citable evidence: "no alarms" is a fact.
+    document = update["monitoring_documents"][0]
+    assert "Nenhum resultado" in document.content
+
+
+def test_a_live_question_without_live_data_never_falls_back_to_the_web() -> None:
+    nodes = make_nodes(web_search_enabled=True, max_rag_attempts=3)
+
+    route = nodes.route_after_grade(
+        {
+            "rag_relevant": False,
+            "retrieval_attempts": 1,
+            "monitoring_status": "empty",
+        }
+    )
+
+    # Neither the manuals nor the web know the current state of this
+    # infrastructure, so rewriting or searching would dress up an absent datum.
+    assert route == "no_answer"
+
+
+def test_unreachable_monitoring_also_stops_before_the_web() -> None:
+    nodes = make_nodes(web_search_enabled=True, max_rag_attempts=3)
+
+    assert (
+        nodes.route_after_grade(
+            {
+                "rag_relevant": False,
+                "retrieval_attempts": 1,
+                "monitoring_status": "unavailable",
+            }
+        )
+        == "no_answer"
+    )
+
+
+def test_useful_live_data_keeps_the_normal_fallbacks() -> None:
+    nodes = make_nodes(web_search_enabled=True, max_rag_attempts=3)
+
+    # With the live half answered, the documentation half may still be enriched.
+    assert (
+        nodes.route_after_grade(
+            {
+                "rag_relevant": False,
+                "retrieval_attempts": 1,
+                "monitoring_status": "ok",
+            }
+        )
+        == "rewrite"
+    )
+
+
+def test_the_refusal_says_which_kind_of_nothing_it_found() -> None:
+    nodes = make_nodes()
+    question = {"question": "quais os alertas?"}
+
+    empty = nodes.no_answer({**question, "monitoring_status": "empty"})
+    unavailable = nodes.no_answer({**question, "monitoring_status": "unavailable"})
+    plain = nodes.no_answer(question)
+
+    assert empty["answer"] == MONITORING_EMPTY_ANSWER
+    assert unavailable["answer"] == MONITORING_UNAVAILABLE_ANSWER
+    assert plain["answer"] == NO_CONTEXT_ANSWER
+    # The transcript has to carry the same words the user was shown.
+    assert empty["messages"][-1].content == MONITORING_EMPTY_ANSWER
+
+
+class FailingMonitoringRouter:
+    def decide(self, question: str):
+        raise RuntimeError("provider fora do ar")
+
+
+def test_a_broken_classifier_falls_back_to_documentation() -> None:
+    nodes = make_nodes(
+        monitoring_router=FailingMonitoringRouter(),
+        monitoring_investigator=StubInvestigator(),
+    )
+
+    # Losing the live-data path costs one kind of answer; letting the router
+    # raise costs every answer, including the ones documentation could give.
+    assert nodes.route_question({"question": "quais os alertas?"}) == "knowledge"
+
+
+def test_unreachable_monitoring_does_not_sink_the_question() -> None:
+    nodes = make_nodes(
+        monitoring_router=StubMonitoringRouter(needs_monitoring=True),
+        monitoring_investigator=StubInvestigator(
+            error=RuntimeError("conexão recusada")
+        ),
+    )
+
+    update = nodes.search_monitoring({"question": "quais os alertas?"})
+
+    assert update["monitoring_documents"] == []
+    assert "indisponível" in update["monitoring_reason"]
+
+
+def test_live_data_leads_the_evidence_and_reaches_the_query() -> None:
+    observation = MonitoringObservation(
+        tool="problem_get",
+        arguments={"limit": 5},
+        content='[{"eventid": "1001", "name": "Perda óptica alta"}]',
+    )
+    nodes = make_nodes(
+        monitoring_investigator=StubInvestigator([observation]),
+        monitoring_router=StubMonitoringRouter(needs_monitoring=True),
+    )
+    preparer = StubQueryPreparer()
+    nodes_with_preparer = make_nodes(query_preparer=preparer)
+
+    update = nodes.search_monitoring({"question": "quais os alertas?"})
+    retrieved = nodes.retrieve_rag(
+        {
+            "question": "quais os alertas?",
+            "prepared_query": "alertas",
+            "search_query": "alertas",
+            "retrieval_attempts": 0,
+            "monitoring_documents": update["monitoring_documents"],
+        }
+    )
+    nodes_with_preparer.prepare_query(
+        {
+            "question": "quais os alertas?",
+            "monitoring_context": update["monitoring_context"],
+        }
+    )
+
+    # Live data is the premise of the question, so it precedes retrieved chunks.
+    assert retrieved["documents"][0].metadata["source"] == "zabbix:problem_get"
+    # And it reaches the query that will look for the manuals.
+    assert "Perda óptica alta" in preparer.calls[0][0]
 
 
 def test_visual_matches_filter_manuals_by_equipment_and_tenant() -> None:

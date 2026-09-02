@@ -51,6 +51,17 @@ class Settings(BaseSettings):
     langfuse_public_key: SecretStr = SecretStr("")
     langfuse_secret_key: SecretStr = SecretStr("")
 
+    # Live monitoring data, fetched through an MCP server, when the question
+    # asks about it. Off by default: the pipeline answers from documents.
+    monitoring_enabled: bool = False
+    monitoring_mcp_url: str = ""
+    monitoring_mcp_token: SecretStr = SecretStr("")
+    # The safety boundary. Only these tools are ever offered to the model, so a
+    # server exposing the whole write API cannot be reached from a chat box.
+    monitoring_allowed_tools: str = ""
+    monitoring_max_iterations: int = Field(default=3, ge=1, le=8)
+    monitoring_timeout_seconds: float = Field(default=30.0, gt=0)
+
     embedding_model: str = "BAAI/bge-m3"
     embedding_device: str | None = None
     reranker_model: str = "BAAI/bge-reranker-v2-m3"

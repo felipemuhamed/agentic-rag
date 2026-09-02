@@ -195,7 +195,7 @@ class EquipmentResolver:
         identifiers: Sequence[str],
     ) -> EquipmentCandidate:
         metadata = reference.metadata
-        identifier_score, matched = _identifier_evidence(metadata, identifiers)
+        identifier_score, matched = identifier_evidence(metadata, identifiers)
         return EquipmentCandidate(
             equipment_id=_equipment_id(reference),
             equipment_name=_text(metadata.get("equipment_name")),
@@ -239,10 +239,15 @@ def _visual_score(distance: object) -> float:
     return max(0.0, min(1.0, 1.0 - float(distance) / 2.0))
 
 
-def _identifier_evidence(
+def identifier_evidence(
     metadata: dict[str, object],
     identifiers: Sequence[str],
 ) -> tuple[float, tuple[str, ...]]:
+    """Score how strongly text read from an image matches a catalog entry.
+
+    Returns the best score in the unit interval and the readings that hit,
+    so a caller can show the operator why an equipment was proposed.
+    """
     readings = [
         (raw, normalized)
         for raw in identifiers

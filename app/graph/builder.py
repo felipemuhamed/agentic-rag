@@ -9,6 +9,7 @@ from app.llm.query_preparer import QueryPreparer
 from app.llm.query_rewriter import QueryRewriter
 from app.llm.rag_grader import RagGrader
 from app.llm.web_grader import WebGrader
+from app.monitoring.agent import MonitoringInvestigator, MonitoringRouter
 from app.websearch.base import WebSearchProvider
 
 
@@ -23,6 +24,8 @@ def build_rag_graph(
     answer_generator: AnswerGenerator,
     max_rag_attempts: int,
     web_search_enabled: bool = True,
+    monitoring_router: MonitoringRouter | None = None,
+    monitoring_investigator: MonitoringInvestigator | None = None,
     checkpointer: Any = None,
 ):
     nodes = RagNodes(
@@ -35,6 +38,8 @@ def build_rag_graph(
         answer_generator=answer_generator,
         max_rag_attempts=max_rag_attempts,
         web_search_enabled=web_search_enabled,
+        monitoring_router=monitoring_router,
+        monitoring_investigator=monitoring_investigator,
     )
     builder = StateGraph(
         RagState,
@@ -42,6 +47,7 @@ def build_rag_graph(
         output_schema=RagOutput,
     )
     builder.add_node("prepare_query", nodes.prepare_query)
+    builder.add_node("search_monitoring", nodes.search_monitoring)
     builder.add_node("retrieve_rag", nodes.retrieve_rag)
     builder.add_node("grade_rag", nodes.grade_rag)
     builder.add_node("rewrite_query", nodes.rewrite_query)
@@ -49,7 +55,17 @@ def build_rag_graph(
     builder.add_node("grade_web", nodes.grade_web)
     builder.add_node("generate_answer", nodes.generate_answer)
     builder.add_node("no_answer", nodes.no_answer)
-    builder.add_edge(START, "prepare_query")
+    # Monitoring runs before the query is prepared so that what the alarm
+    # actually says becomes part of the search that finds the manuals.
+    builder.add_conditional_edges(
+        START,
+        nodes.route_question,
+        {
+            "monitoring": "search_monitoring",
+            "knowledge": "prepare_query",
+        },
+    )
+    builder.add_edge("search_monitoring", "prepare_query")
     builder.add_edge("prepare_query", "retrieve_rag")
     builder.add_edge("retrieve_rag", "grade_rag")
     builder.add_conditional_edges(

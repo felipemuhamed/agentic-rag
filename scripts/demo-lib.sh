@@ -40,6 +40,19 @@ pause() {
   printf '\n'
 }
 
+# Le uma variavel do .env sem executar o arquivo: valores como "Agentic RAG"
+# quebrariam um `source`. Compartilhado porque as demos precisam saber o que
+# esta ligado antes de prometer um roteiro que o ambiente nao suporta.
+env_value() {
+  local name="$1" default="${2:-}" value=""
+  if [ -f "$DEMO_REPO_ROOT/.env" ]; then
+    value=$(sed -n "s/^[[:space:]]*${name}=//p" "$DEMO_REPO_ROOT/.env" | tail -n 1)
+    value="${value%\"}"; value="${value#\"}"
+    value="${value%\'}"; value="${value#\'}"
+  fi
+  printf '%s' "${value:-$default}"
+}
+
 require_tools() {
   local tool
   for tool in curl python3; do
@@ -304,7 +317,10 @@ if sources:
         origin = str(item.get("source") or item.get("url") or "")
         citation = str(item.get("citation") or "")
         suffix = " - " + section if section else ""
-        print("  " + citation + " " + title + suffix)
+        # Live data and manuals cite alike, so the origin has to say which is
+        # which: the operator judges an alarm and a manual differently.
+        live = " (ao vivo)" if origin.startswith("zabbix:") else ""
+        print("  " + citation + " " + title + suffix + live)
         if origin:
             print(DIM + "      " + origin + RESET)
 else:
